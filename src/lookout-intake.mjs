@@ -2,6 +2,7 @@
 import { readFile } from "fs/promises";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
+import fetch from "node-fetch";
 
 const ISSUER = process.env.SSF_ISSUER;
 const OKTA_ORG = process.env.OKTA_ORG;
