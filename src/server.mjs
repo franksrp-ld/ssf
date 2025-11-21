@@ -12,7 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
-const ISSUER = process.env.SSF_ISSUER || "https://ssf.lookoutdemo.com";
+const ISSUER = process.env.SSF_ISSUER;
+if (!ISSUER) throw new Error("Missing SSF_ISSUER");
 
 // --- JWKS loader (no JSON import/assert) ---
 let jwksCache = null;
