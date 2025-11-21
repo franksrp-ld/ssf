@@ -1,8 +1,7 @@
-// lookout-intake.mjs
+// src/lookout-intake.mjs
 import { readFile } from "fs/promises";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
-import fetch from "node-fetch";
 
 const ISSUER = process.env.SSF_ISSUER;
 const OKTA_ORG = process.env.OKTA_ORG;
@@ -21,7 +20,7 @@ let privateKeyPromise;
 async function getPrivateKey() {
   if (!privateKeyPromise) {
     privateKeyPromise = (async () => {
-      const pem = await readFile("./private.pem", "utf8");
+      const pem = await readFile("./src/private.pem", "utf8");
       return importPKCS8(pem, ALG);
     })();
   }
@@ -48,16 +47,16 @@ async function sendSetToOkta(payload) {
     .setProtectedHeader({
       alg: ALG,
       typ: "secevent+jwt",
-      kid: KID
+      kid: KID,
     })
     .sign(key);
 
   const resp = await fetch(`${OKTA_ORG}/security/api/v1/security-events`, {
     method: "POST",
     headers: {
-      "Content-Type": "application/secevent+jwt"
+      "Content-Type": "application/secevent+jwt",
     },
-    body: jwt
+    body: jwt,
   });
 
   const text = await resp.text().catch(() => "");
@@ -92,7 +91,7 @@ export async function handleLookoutIntake(req, res) {
       return res.end(
         JSON.stringify({
           error: "invalid_json",
-          detail: e.message
+          detail: e.message,
         })
       );
     }
@@ -108,15 +107,13 @@ export async function handleLookoutIntake(req, res) {
       return res.end(
         JSON.stringify({
           error: "missing_fields",
-          detail: "user.email and risk.current_level are required"
+          detail: "user.email and risk.current_level are required",
         })
       );
     }
 
     const currentLevel = normalizeRiskLevel(lookoutCurrent);
-    const previousLevel = normalizeRiskLevel(
-      lookoutPrevious || "low"
-    );
+    const previousLevel = normalizeRiskLevel(lookoutPrevious || "low");
 
     const eventTsSeconds = body?.event_timestamp
       ? Math.floor(new Date(body.event_timestamp).getTime() / 1000)
@@ -124,7 +121,6 @@ export async function handleLookoutIntake(req, res) {
 
     const nowSeconds = Math.floor(Date.now() / 1000);
 
-    // Build the SAME payload structure as your working test SET
     const payload = {
       iss: ISSUER,
       aud: OKTA_ORG,
@@ -138,25 +134,22 @@ export async function handleLookoutIntake(req, res) {
             previous_level: previousLevel,
             initiating_entity: "system",
             reason_admin: {
-              en: reason
+              en: reason,
             },
             subject: {
               user: {
                 format: "email",
-                email: userEmail
-                // you can also add: id: "<oktaUserId>" later if you map it
-              }
-            }
-          }
-      }
+                email: userEmail,
+              },
+            },
+          },
+      },
     };
 
     console.log("Built SET payload from Lookout intake:", payload);
 
-    // Send it to Okta
     await sendSetToOkta(payload);
 
-    // Respond to Lookout (or your test caller)
     res.writeHead(202, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "accepted" }));
   } catch (err) {
@@ -165,7 +158,7 @@ export async function handleLookoutIntake(req, res) {
     res.end(
       JSON.stringify({
         error: "internal_error",
-        message: err.message
+        message: err.message,
       })
     );
   }
