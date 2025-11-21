@@ -3,8 +3,12 @@ import { readFile } from "fs/promises";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
 
-const ISSUER = "https://ssf.lookoutdemo.com";
-const OKTA_ORG = "https://integrator-2974929.okta.com"; // no trailing slash
+const ISSUER = process.env.SSF_ISSUER;
+const OKTA_ORG = process.env.OKTA_ORG;
+
+if (!ISSUER) throw new Error("Missing SSF_ISSUER");
+if (!OKTA_ORG) throw new Error("Missing OKTA_ORG");
+
 const ALG = "RS256";
 const KID = "lookout-ssf-key-1";
 
