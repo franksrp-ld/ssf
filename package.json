@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node src/server.mjs"
   },
   "dependencies": {
     "jose": "^5.0.0",
