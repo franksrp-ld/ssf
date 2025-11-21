@@ -1,4 +1,4 @@
-// server.mjs
+// src/server.mjs
 import http from "http";
 import { URL } from "url";
 import { readFileSync } from "fs";
@@ -13,9 +13,13 @@ const __dirname = dirname(__filename);
 
 const PORT = process.env.PORT || 8080;
 const ISSUER = process.env.SSF_ISSUER;
-if (!ISSUER) throw new Error("Missing SSF_ISSUER");
 
-// --- JWKS loader (no JSON import/assert) ---
+// Validate required config at startup
+if (!ISSUER) {
+  throw new Error("Missing SSF_ISSUER environment variable");
+}
+
+// --- JWKS loader ---
 let jwksCache = null;
 function getJwks() {
   if (!jwksCache) {
@@ -32,8 +36,8 @@ const wellKnown = {
   delivery_methods_supported: ["push"],
   events_supported: {
     "https://schemas.okta.com/secevent/okta/event-type/device-risk-change": {},
-    "https://schemas.okta.com/secevent/okta/event-type/user-risk-change": {}
-  }
+    "https://schemas.okta.com/secevent/okta/event-type/user-risk-change": {},
+  },
 };
 
 const server = http.createServer(async (req, res) => {
@@ -57,10 +61,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // SSF discovery
-    if (
-      path === "/.well-known/ssf-configuration" &&
-      method === "GET"
-    ) {
+    if (path === "/.well-known/ssf-configuration" && method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify(wellKnown));
     }
@@ -72,7 +73,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify(jwks));
     }
 
-    // Lookout intake – manual / future webhook
+    // Lookout intake – internal entry point for polling/webhooks
     if (path === "/intake/lookout" && method === "POST") {
       return handleLookoutIntake(req, res);
     }
