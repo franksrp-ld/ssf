@@ -89,5 +89,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
+  console.log(`[BOOT] SSF Issuer: ${ISSUER}`);
   startLookoutPolling();
 });
