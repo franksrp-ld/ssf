@@ -90,14 +90,16 @@ Calls: `GET /mra/api/v2/devices?limit=200&updated_since=`
 | `THREATS_LOW`, `SECURE` | `low` |
 
 ### **3. Build SET event**
-`device-risk-change`
+Event type: `device-risk-change`
 
 ### **4. Sign with RS256 (JOSE)**  
 Uses `private.pem` — **never commit** this file.
 
 ### **5. POST to Okta SET API**
-`POST /security/api/v1/security-events`
-`Content-Type: application/secevent+jwt`
+```
+POST /security/api/v1/security-events
+Content-Type: application/secevent+jwt
+```
 
 ---
 
@@ -117,13 +119,13 @@ npm start
 
 ---
 
-## API Endpoints
+## 🔌 API Endpoints
 
 ### Health Check
 ```
 GET /healthz
 ```
-### SSF Discovery Document
+### SSF Discovery 
 ```
 GET /.well-known/ssf-configuration
 ```
@@ -228,8 +230,8 @@ az containerapp create \
 
 ## 🔐 Security Notes
 
-- Never commit private.pem
-- Always host SSF_ISSUER on HTTPS
-- Use secret managers / KMS in cloud deployments
-- Prefer workload identity over ACCESS KEY secrets
+- ❗ Never commit **private.pem**
+- Always run SSF over HTTPS
+- Use **secret managers**, **KMS**, or **workload identity**
+- Avoid static API tokens where possible
 
