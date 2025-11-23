@@ -15,11 +15,11 @@ The flow:
 ## 0. Prerequisites
 
 You’ll need:
-	- A GCP project (e.g. lookoutdemo-ssf)
-	- Billing enabled for the project
-	- The gcloud CLI installed and logged in
-	- Node.js app already in GitHub at franksrp-ld/ssf (or local clone)
-	- A **private key** (private.pem) and matching **JWKS** (jwks.json) already in src/
+- A GCP project (e.g. lookoutdemo-ssf)
+- Billing enabled for the project
+- The gcloud CLI installed and logged in
+- Node.js app already in GitHub at franksrp-ld/ssf (or local clone)
+- A **private key** (private.pem) and matching **JWKS** (jwks.json) already in src/
 
 > ⚠️ **Security note:**
 > private.pem should **not be committed to GitHub**. Keep it only in your local working directory when building your image, or use Secret Manager in production.
@@ -108,19 +108,19 @@ Cloud Build will:
 ## 4. Environment Variables for Cloud Run
 
 These are the minimum required env vars:
-	- SSF_ISSUER – Public HTTPS URL of your SSF service (Cloud Run URL)
-	- OKTA_ORG – Your Okta org URL, e.g. https://integrator-2974929.okta.com
-	- LOOKOUT_APP_KEY – Lookout App Key used to acquire OAuth tokens
+- SSF_ISSUER – Public HTTPS URL of your SSF service (Cloud Run URL)
+- OKTA_ORG – Your Okta org URL, e.g. https://integrator-2974929.okta.com
+- LOOKOUT_APP_KEY – Lookout App Key used to acquire OAuth tokens
 	
 Optional tuning knobs:
-	- LOOKOUT_SINCE_MINUTES – Polling lookback window (default 5)
-	- LOOKOUT_POLL_INTERVAL_SECONDS – Polling interval (default 60)
-	- LOOKOUT_ENTERPRISE_GUID – To scope to a single Lookout tenant
+- LOOKOUT_SINCE_MINUTES – Polling lookback window (default 5)
+- LOOKOUT_POLL_INTERVAL_SECONDS – Polling interval (default 60)
+- LOOKOUT_ENTERPRISE_GUID – To scope to a single Lookout tenant
 
 You won’t know the final SSF_ISSUER (the Cloud Run URL) until after the first deploy, so we use a two-pass deployment:
-	1.	First deploy with a placeholder SSF_ISSUER
-	2.	Capture the Cloud Run URL
-	3.	Update the service with the real SSF_ISSUER
+1.	First deploy with a placeholder SSF_ISSUER
+2.	Capture the Cloud Run URL
+3.	Update the service with the real SSF_ISSUER
 	
 ---
 	
@@ -193,9 +193,9 @@ curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
 ```
 
 You should see:
-	- issuer equal to your SSF_ISSUER
-	- jwks_uri pointing at /jwks.json
-	- events_supported including Okta device-risk-change
+- issuer equal to your SSF_ISSUER
+- jwks_uri pointing at /jwks.json
+- events_supported including Okta device-risk-change
 
 ### 7.3 JWKS
 
@@ -204,8 +204,8 @@ curl -s "$CLOUD_RUN_URL/jwks.json" | jq
 ```
 
 Confirm:
-	- keys[0].kid matches the KID used in your lookout-intake.mjs
-	- kty is RSA, alg is RS256
+- keys[0].kid matches the KID used in your lookout-intake.mjs
+- kty is RSA, alg is RS256
 
 ### 7.4 Logs
 
@@ -218,59 +218,59 @@ gcloud run services logs read "$SERVICE_NAME" \
 ```
   
 Look for log lines:
-	- [LookoutPoll] Starting Lookout polling...
-	- [LookoutPoll] Received N devices from Lookout
-	- Okta SSF accepted SET: 202
-	- Or error details if something failed
+- [LookoutPoll] Starting Lookout polling...
+- [LookoutPoll] Received N devices from Lookout
+- Okta SSF accepted SET: 202
+- Or error details if something failed
 
 ---
 	
 ## 8. Wire Okta To the New SSF Endpoint
 
 In Okta Admin (high level):
-	1.	**Security → Signals Providers**
-	2.	Add / edit your Lookout SSF Provider
-	3.	Set:
-		- **Issuer URL** = SSF_ISSUER (your Cloud Run URL)
-		- **JWKS URL** = SSF_ISSUER/jwks.json
-	4.	Upload the **public key / or configure JWKS** as required
-	5.	Save & verify Okta can fetch the configuration
+1.	**Security → Signals Providers**
+2.	Add / edit your Lookout SSF Provider
+3.	Set:
+	- **Issuer URL** = SSF_ISSUER (your Cloud Run URL)
+	- **JWKS URL** = SSF_ISSUER/jwks.json
+4.	Upload the **public key / or configure JWKS** as required
+5.	Save & verify Okta can fetch the configuration
 
 Then confirm:
-	- Entity Risk Policy is configured (High-risk logout, etc.)
-	- Authentication / App Sign-in policies consume risk
+- Entity Risk Policy is configured (High-risk logout, etc.)
+- Authentication / App Sign-in policies consume risk
 
 ---
 
 ## 9. Functional Test
-	1.	On a Lookout-enrolled device, trigger a High or Medium risk state
-	2.	Wait for the poll interval (default 60s)
-	3.	Check Cloud Run logs for:
-		- [LookoutPoll] Sent risk event to /intake/lookout
-		- Okta SSF accepted SET: 202
-	4.	In **Okta System Log**, search for security.events.provider.receive_event and device_risk_change
-	5.	Attempt sign-in as that user and validate:
-		- High risk → session termination / blocked
-		- Medium risk → forced MFA
-		- Low risk → normal experience
+1.	On a Lookout-enrolled device, trigger a High or Medium risk state
+2.	Wait for the poll interval (default 60s)
+3.	Check Cloud Run logs for:
+	- [LookoutPoll] Sent risk event to /intake/lookout
+	- Okta SSF accepted SET: 202
+4.	In **Okta System Log**, search for security.events.provider.receive_event and device_risk_change
+5.	Attempt sign-in as that user and validate:
+	- High risk → session termination / blocked
+	- Medium risk → forced MFA
+	- Low risk → normal experience
 
 ---
 
 ## 10. Hardening Notes (Production)
 
 For a production-grade deployment:
-	- Move private.pem to **Secret Manager** or KMS-managed storage
-	- Use **Workload Identity** instead of long-lived credentials
-	- Lock down Cloud Run ingress (e.g., only Okta / Lookout / admin IPs) if required
-	- Put Cloud Run behind a **custom domain** + managed certificate if you want a pretty SSF issuer URL
+- Move private.pem to **Secret Manager** or KMS-managed storage
+- Use **Workload Identity** instead of long-lived credentials
+- Lock down Cloud Run ingress (e.g., only Okta / Lookout / admin IPs) if required
+- Put Cloud Run behind a **custom domain** + managed certificate if you want a pretty SSF issuer URL
 
 ---
 	
 # Secret Manager–Aware Deployment on Google Cloud Run
 
 This variant keeps all sensitive material in **Google Secret Manager**:
-	- private.pem (SSF signing key)
-	- LOOKOUT_APP_KEY (Lookout API app key)
+- private.pem (SSF signing key)
+- LOOKOUT_APP_KEY (Lookout API app key)
 
 Cloud Run loads them as environment variables at runtime; your container image stays clean.
 
@@ -320,8 +320,8 @@ async function getPrivateKey() {
 Keep the rest of the file (normalizeRiskLevel, sendSetToOkta, handleLookoutIntake) as-is.
 
 ### 1.2. Remove Local private.pem From the Image
-	- Delete src/private.pem from the repo (if it’s there)
-	- Ensure .gitignore contains:
+- Delete src/private.pem from the repo (if it’s there)
+- Ensure .gitignore contains:
 	
 ```gitignore
 # Keys
@@ -429,9 +429,9 @@ gcloud builds submit --tag "$IMAGE_URI"
 ## 5. Deploy to Cloud Run With Secrets
 
 We’ll:
-	- Inject SSF_PRIVATE_KEY_PEM from ssf-private-key
-	- Inject LOOKOUT_APP_KEY from lookout-app-key
-	- Set SSF_ISSUER and OKTA_ORG as normal env vars
+- Inject SSF_PRIVATE_KEY_PEM from ssf-private-key
+- Inject LOOKOUT_APP_KEY from lookout-app-key
+- Set SSF_ISSUER and OKTA_ORG as normal env vars
 
 ### 5.1. First Deploy (with placeholder SSF_ISSUER)
 
@@ -495,8 +495,8 @@ curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
 ```
 
 Confirm:
-	- issuer == CLOUD_RUN_URL
-	- jwks_uri ends with /jwks.json
+- issuer == CLOUD_RUN_URL
+- jwks_uri ends with /jwks.json
 
 ### 7.3. Logs
 
@@ -509,30 +509,30 @@ gcloud run services logs read "$SERVICE_NAME" \
 You **should not** see errors like “Missing SSF_PRIVATE_KEY_PEM” or “Missing LOOKOUT_APP_KEY”.
 
 You should see:
-	- [LookoutPoll] Starting Lookout polling...
-	- [LookoutPoll] Received N devices from Lookout
-	- Okta SSF accepted SET: 202
+- [LookoutPoll] Starting Lookout polling...
+- [LookoutPoll] Received N devices from Lookout
+- Okta SSF accepted SET: 202
 	
 ---
 
 ## 8. Okta & Lookout Wiring (Same As Before)
 
 Once the service is healthy:
-	1.	Configure **Okta Signals Provider** with:
-		- Issuer: CLOUD_RUN_URL
-		- JWKS: CLOUD_RUN_URL/jwks.json
-	2.	Ensure **Entity Risk Policy**, **Authentication Policy**, and **App Sign-In Policy** are configured to consume device risk.
-	3.	Generate risk events in Lookout and verify they flow into Okta via System Log + your policies.
+1.	Configure **Okta Signals Provider** with:
+	- Issuer: CLOUD_RUN_URL
+	- JWKS: CLOUD_RUN_URL/jwks.json
+2.	Ensure **Entity Risk Policy**, **Authentication Policy**, and **App Sign-In Policy** are configured to consume device risk.
+3.	Generate risk events in Lookout and verify they flow into Okta via System Log + your policies.
 
 ---
 
 ## 9. Operational Notes
-	•	**Rotating the private key**
-		- Add a new secret version for ssf-private-key
-		- Optionally change KID and rotate jwks.json accordingly
-		- Redeploy the service (or force new revision)
-	•	**Rotating the Lookout App Key**
-		- Add new version to lookout-app-key
-		- Cloud Run automatically uses the latest version when the revision restarts (you can trigger by gcloud run services update with a no-op env var change)
-	•	**Hard failures**
-		- If secrets are missing or IAM is misconfigured, the app will throw on startup (Missing SSF_PRIVATE_KEY_PEM / Missing LOOKOUT_APP_KEY). Cloud Run revision will show as unhealthy, making it obvious during rollout.
+- **Rotating the private key**
+	- Add a new secret version for ssf-private-key
+	- Optionally change KID and rotate jwks.json accordingly
+	- Redeploy the service (or force new revision)
+- **Rotating the Lookout App Key**
+	- Add new version to lookout-app-key
+	- Cloud Run automatically uses the latest version when the revision restarts (you can trigger by gcloud run services update with a no-op env var change)
+- **Hard failures**
+	- If secrets are missing or IAM is misconfigured, the app will throw on startup (Missing SSF_PRIVATE_KEY_PEM / Missing LOOKOUT_APP_KEY). Cloud Run revision will show as unhealthy, making it obvious during rollout.
