@@ -7,6 +7,23 @@ This guide walks customers and sales engineers through deploying the SSF Transmi
 
 ## 0. Overview
 
+The SSF Transmitter continuously polls Lookout Mobile Risk, converts device posture changes into SSF-compliant Security Event Tokens (SET), signs them with RS256, and sends them to Okta.
+
+```text
+Lookout Mobile Risk API
+        │
+        ▼
+SSF Transmitter (AWS App Runner)
+        • Poll Lookout risk
+        • Normalize risk levels
+        • Sign SET → RS256
+        • Publish to Okta SSF device-risk-change
+        ▼
+Okta Identity Threat Protection
+        ▼
+Adaptive Access Policies (MFA, block, logout, etc.)
+```
+
 Target flow:
 
 1. Build + push the SSF container image.
