@@ -39,8 +39,10 @@ Target flow:
 
 You’ll need:
 
-- A GCP project (e.g. `lookoutdemo-ssf`) with billing enabled.
-- `gcloud` CLI installed and up to date.
+- An AWS account with admin or sufficient IAM privileges.
+- `AWS` CLI installed and up to date.
+- An ECR (Elastic Container Registry) enabled
+- A Docker or another container builder
 - Git installed 
 - A Lookout tenant + App Key with access to Mobile Risk API (MRA).
 - An Okta Identity Engine org with Identity Threat Protection.
@@ -49,35 +51,24 @@ You’ll need:
 
 ---
 
-## 2. Login to Google Cloud
+## 2. Authenticate to AWS
+
+Log in to AWS and configure credentials:
 
 ```bash
-# Authenticate your user
-gcloud auth login
+aws configure
+```
 
-# (Optional, but recommended) Application default credentials
-gcloud auth application-default login
+Log in to ECR:
 
-# Select your project and region
-gcloud config set project <PROJECT_ID>
-gcloud config set run/region us-central1
+```bash
+aws ecr get-login-password --region us-east-1 \
+  | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
 ```
 
 ---
 
-## 3. Enable Required Cloud APIs
-
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  secretmanager.googleapis.com \
-  artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com
-```
-
----  
-
-## 4. Clone the Repository
+## 3. Clone the Repository
 
 ```bash
 git clone https://github.com/franksrp-ld/ssf.git
@@ -102,7 +93,7 @@ ssf/
 
 ---
 
-## 5. Create the SSF Signing Key (private.pem + jwks.json)
+## 4. Create the SSF Signing Key (private.pem + jwks.json)
 
 > [!TIP]
 > For PoC, you can generate the key locally and bake it into the image.
@@ -123,8 +114,8 @@ node gen-jwk.mjs
 ### Verify src/ now contains:
 
 ```text
-private.pem
-jwks.json
+src/private.pem
+src/jwks.json
 ```
 
 > [!IMPORTANT]
