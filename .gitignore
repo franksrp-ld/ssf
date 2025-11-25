@@ -1,3 +1,45 @@
-node_modules
+# Node modules
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Environment / Secrets
 .env
+.env.*
+*.pem
+private.pem
+*.key
+*.crt
+
+# Build artifacts
+dist/
+.build/
+coverage/
+tmp/
+.cache/
+
+# OS Junk
 .DS_Store
+Thumbs.db
+
+# Local config only
+.vscode/
+.idea/
+*.swp
+
+# Docker
+docker-compose.override.yml
+
+# Ignore local runtime state
+*.pid
+*.seed
+
+# Ignore archives
+*.zip
+*.tar.gz
