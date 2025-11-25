@@ -67,7 +67,7 @@ git clone https://github.com/franksrp-ld/ssf.git
 cd ssf
 ```
 
-Ensure the structure:
+### Ensure the structure:
 
 ```bash
 ssf/
@@ -91,19 +91,19 @@ ssf/
 > For PoC, you can generate the key locally and bake it into the image.
 > For production, consider storing it in Secret Manager and updating code to load from an env var.
 
-Generate private.pem
+### Generate private.pem
 
 ```bash
 openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
 ```
 
-Generate jwks.json
+### Generate jwks.json
 
 ```bash
 node gen-jwk.mjs
 ```
 
-Verify src/ now contains:
+### Verify src/ now contains:
 
 ```text
 private.pem
@@ -122,7 +122,7 @@ We’ll store:
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
 - (Optional) SSF_PRIVATE_KEY_PEM – contents of private.pem.
 
-Create Secrets
+### Create Secrets
 
 ```bash
 echo -n "<LOOKOUT_APP_KEY>" | \
@@ -131,7 +131,7 @@ echo -n "<LOOKOUT_APP_KEY>" | \
 gcloud secrets create SSF_PRIVATE_KEY --data-file=src/private.pem
 ```
 
-Grant Cloud Run access
+### Grant Cloud Run access
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) \
@@ -157,7 +157,7 @@ Cloud Run uses two sources for environment variables:
 | Environment Vars | Stored in Cloud Run service definition | Non-sensitive values (URLs, toggles) |
 | Secret Manager Env Vars | Stored as secret mounts or injected env-vars | Sensitive values (private key, Lookout App Key) |
 
-Our mapping:
+### Our mapping:
 
 | Purpose | Storage | Example |
 | --- | --- | --- |
@@ -171,7 +171,7 @@ Our mapping:
 
 ## 8. Build & Push Container Image
 
-Create a repo:
+### Create a repo:
 
 ```bash
 gcloud artifacts repositories create ssf-repo \
@@ -179,7 +179,7 @@ gcloud artifacts repositories create ssf-repo \
   --location=us-central1
 ```
 
-Build & push:
+### Build & push:
 
 ```bash
 gcloud builds submit --tag \
@@ -202,7 +202,7 @@ gcloud run deploy ssf-transmitter \
   --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY:latest
 ```
 
-Record the service URL:
+### Record the service URL:
 
 ```text
 Service URL: https://ssf-transmitter-xxxxxx-uc.a.run.app
@@ -215,28 +215,15 @@ That URL will become your **SSF_ISSUER**.
 ## 10. Update Service With REAL SSF_ISSUER
 
 ```bash
-CLOUD_RUN_URL="https://ssf-transmitter-xxxxxx-uc.a.run.app"
-
-gcloud run services update "$SERVICE_NAME" \
-  --set-env-vars SSF_ISSUER="$CLOUD_RUN_URL"
-```
-
-You can combine everything in one update if needed:
-
-```bash
-gcloud run services update "$SERVICE_NAME" \
-  --set-env-vars SSF_ISSUER="$CLOUD_RUN_URL",\
-OKTA_ORG="https://yourorg.okta.com",\
-LOOKOUT_SINCE_MINUTES="5",\
-LOOKOUT_POLL_INTERVAL_SECONDS="60" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest
+gcloud run services update ssf-transmitter \
+  --set-env-vars SSF_ISSUER="https://ssf-transmitter-xxxxx-uc.a.run.app"
 ```
 
 --- 
 
-## 12. Validate Deployment
+## 11. Validate Deployment
 
-### 12.1 Health Check
+### Health Check
 
 ```bash
 curl -i "$CLOUD_RUN_URL/healthz"
@@ -249,7 +236,7 @@ HTTP/2 200
 ok
 ```
 
-### 12.2 SSF Discovery
+### SSF Discovery
 
 ```bash
 curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
@@ -259,7 +246,7 @@ Verify:
 - issuer == SSF_ISSUER (Cloud Run URL).
 - jwks_uri points at ${SSF_ISSUER}/jwks.json.
 
-### 12.3 JWKS
+### JWKS
 
 ```bash
 curl -s "$CLOUD_RUN_URL/jwks.json" | jq
@@ -269,7 +256,7 @@ Check:
 - keys[0].kid equals your lookout-ssf-key-1 (or chosen KID).
 - alg is RS256.
 
-### 12.4 Logs
+### Logs
 
 ```bash
 gcloud run services logs read "$SERVICE_NAME" \
@@ -284,7 +271,7 @@ Look for:
 
 --- 
 
-## 13. Configure Okta SSF
+## 12. Configure Okta SSF
 
 In the Okta Admin console:
 1.	**Security → Signals Providers**
@@ -301,7 +288,7 @@ Then configure:
 
 --- 
 
-## 14. Functional Test
+## 13. Functional Test
 1.	On a test device enrolled in Lookout, trigger a **Medium** or **High threat** (e.g., controlled malicious app / network).
 2.	Wait for at least one poll interval (e.g., 60 seconds).
 3.	Check Cloud Run logs:
@@ -316,7 +303,7 @@ Then configure:
 	
 --- 
 
-## 15. Production Hardening
+## 14. Production Hardening
 
 For a production rollout:
 
