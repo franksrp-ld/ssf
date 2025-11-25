@@ -1,16 +1,11 @@
-# Deploying the Lookout → Okta SSF Transmitter on Google Cloud Run (Secret-Aware Model)
+# Deploying the Lookout → Okta SSF Transmitter on Google Cloud Run
+**Secret Manager–Aware Deployment Model**
 
-This runbook walks a customer / sales engineer through deploying the SSF transmitter to **Google Cloud Run**, using:
-
-- **Google Secret Manager** for:
-  - `LOOKOUT_APP_KEY`
-  - (optional) `SSF_PRIVATE_KEY_PEM`
-- **Artifact Registry** for container images
-- **Okta Identity Threat Protection** for risk policies
+This guide walks customers and sales engineers through deploying the SSF Transmitter to **Google Cloud Run**, using **Secret Manager** for all sensitive data, and wiring it into Lookout Mobile Risk + Okta Identity Threat Protection.
 
 ---
 
-## 1. Overview
+## 0. Overview
 
 Target flow:
 
@@ -23,19 +18,21 @@ Target flow:
 
 ---
 
-## 2. Prerequisites
+## 1. Prerequisites
 
 You’ll need:
 
 - A GCP project (e.g. `lookoutdemo-ssf`) with billing enabled.
-- A Lookout tenant + App Key with access to `/mra/api/v2/devices`.
-- An Okta Identity Engine org with Identity Threat Protection.
 - `gcloud` CLI installed and up to date.
+- Git installed 
+- A Lookout tenant + App Key with access to Mobile Risk API (MRA).
+- An Okta Identity Engine org with Identity Threat Protection.
 - Node.js (for key generation scripts, if used).
+- A local clone of this repo
 
 ---
 
-## 3. Login to Google Cloud
+## 2. Login to Google Cloud
 
 ```bash
 # Authenticate your user
@@ -50,6 +47,18 @@ gcloud config set run/region us-central1
 ```
 
 ---
+
+## 3. Enable Required Cloud APIs
+
+```bash
+gcloud services enable \
+  run.googleapis.com \
+  secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com
+```
+
+---  
 
 ## 4. Clone the Repository
 
@@ -82,37 +91,23 @@ ssf/
 > For PoC, you can generate the key locally and bake it into the image.
 > For production, consider storing it in Secret Manager and updating code to load from an env var.
 
-### 5.1 Generate private.pem
+Generate private.pem
 
 ```bash
-mkdir -p src
-
-openssl genrsa -out src/private.pem 2048
+openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
 ```
 
-### 5.2 Generate jwks.json
-
-If your repo has a helper script:
+Generate jwks.json
 
 ```bash
 node gen-jwk.mjs
 ```
 
-Otherwise, generate a JWK (via JOSE or another tool) and create src/jwks.json:
+Verify src/ now contains:
 
-```json
-{
-  "keys": [
-    {
-      "kty": "RSA",
-      "n": "<base64url-modulus>",
-      "e": "AQAB",
-      "alg": "RS256",
-      "use": "sig",
-      "kid": "lookout-ssf-key-1"
-    }
-  ]
-}
+```text
+private.pem
+jwks.json
 ```
 
 > [!IMPORTANT]
@@ -127,114 +122,89 @@ We’ll store:
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
 - (Optional) SSF_PRIVATE_KEY_PEM – contents of private.pem.
 
-### 6.1 Enable Secret Manager API
+Create Secrets
 
 ```bash
-gcloud services enable secretmanager.googleapis.com
+echo -n "<LOOKOUT_APP_KEY>" | \
+  gcloud secrets create LOOKOUT_APP_KEY --data-file=-
+
+gcloud secrets create SSF_PRIVATE_KEY --data-file=src/private.pem
 ```
 
-### 6.2 Create LOOKOUT_APP_KEY Secret
+Grant Cloud Run access
 
 ```bash
-gcloud secrets create LOOKOUT_APP_KEY \
-  --replication-policy="automatic"
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) \
+  --format="value(projectNumber)")
 
-# Add the current value
-echo -n "<YOUR_LOOKOUT_APP_KEY>" | \
-  gcloud secrets versions add LOOKOUT_APP_KEY --data-file=-
+gcloud secrets add-iam-policy-binding LOOKOUT_APP_KEY \
+  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+
+gcloud secrets add-iam-policy-binding SSF_PRIVATE_KEY \
+  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 ```
-
-### 6.3 (Optional) Store Private Key as Secret
-
-```bash
-gcloud secrets create SSF_PRIVATE_KEY_PEM \
-  --replication-policy="automatic"
-
-gcloud secrets versions add SSF_PRIVATE_KEY_PEM \
-  --data-file=src/private.pem
-```
-
-> [!NOTE]
-> The current code reads from ./private.pem. 
-> - For a fully secret-aware model, either:
-> 	- Mount SSF_PRIVATE_KEY_PEM as a file at src/private.pem, or
-> 	- Update lookout-intake.mjs to read from an env var instead of the file path.
 
 ---
 
-## 7. Enable Required Cloud APIs
+## 7. Where Environment Variables Are Stored (Important)
 
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com
-```
+Cloud Run uses two sources for environment variables:
+
+| Type | Where It Lives | What We Use It For |
+| --- | --- | --- |
+| Environment Vars | Stored in Cloud Run service definition | Non-sensitive values (URLs, toggles) |
+| Secret Manager Env Vars | Stored as secret mounts or injected env-vars | Sensitive values (private key, Lookout App Key) |
+
+Our mapping:
+
+| Purpose | Storage | Example |
+| --- | --- | --- |
+| LOOKOUT_APP_KEY | Secret Manager | Injected via --set-secrets |
+| SSF_PRIVATE_KEY_PEM | Secret Manager | Injected via --set-secrets |
+| SSF_ISSUER | Cloud Run Env Var | the public HTTPS URL of the Cloud Run service (we’ll set it after first deploy) |
+| OKTA_ORG | Cloud Run Env Var | your Okta org URL (no trailing slash) | 
+| Polling configs | Cloud Run Env Vars | Non-sensitive | 
 
 --- 
 
-## 8. Environment Variables for Cloud Run
+## 8. Build & Push Container Image
 
-Core variables:
-- SSF_ISSUER – the public HTTPS URL of the Cloud Run service (we’ll set it after first deploy).
-- OKTA_ORG – your Okta org URL (no trailing slash).
-- LOOKOUT_APP_KEY – sourced from Secret Manager.
-- Optional: LOOKOUT_SINCE_MINUTES, LOOKOUT_POLL_INTERVAL_SECONDS, LOOKOUT_ENTERPRISE_GUID.
-
----
-
-## 9. Build & Push Container Image (Artifact Registry)
+Create a repo:
 
 ```bash
-PROJECT_ID=$(gcloud config get-value project)
-REGION=us-central1
-IMAGE_NAME=ssf-transmitter
-REPO_ID=ssf-repo
-IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_ID/$IMAGE_NAME:latest"
-```
-
-### 9.1 Create Artifact Repository (one-time)
-
-```bash
-gcloud artifacts repositories create "$REPO_ID" \
+gcloud artifacts repositories create ssf-repo \
   --repository-format=docker \
-  --location="$REGION" \
-  --description="SSF transmitter images"
+  --location=us-central1
 ```
 
-### 9.2 Build & Push
-
-From the repo root:
+Build & push:
 
 ```bash
-gcloud builds submit --tag "$IMAGE_URI"
+gcloud builds submit --tag \
+  us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest
 ```
 
 --- 
 
-## 10. First Deploy (Placeholder SSF_ISSUER)
+## 9. First Deploy (Placeholder SSF_ISSUER)
 
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
 
 ```bash
-SERVICE_NAME=ssf-transmitter
-
-gcloud run deploy "$SERVICE_NAME" \
-  --image "$IMAGE_URI" \
-  --platform managed \
+gcloud run deploy ssf-transmitter \
+  --image us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest \
   --allow-unauthenticated \
   --set-env-vars OKTA_ORG="https://yourorg.okta.com" \
-  --set-env-vars SSF_ISSUER="https://placeholder.example" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest
+  --set-env-vars SSF_ISSUER="https://placeholder" \
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
+  --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY:latest
 ```
 
-> If you’ve updated the app to read the private key from an env var, also add:
-> - --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY_PEM:latest
-
-Capture the output:
+Record the service URL:
 
 ```text
-Service [ssf-transmitter] revision [...] has been deployed and is serving 100 percent of traffic.
 Service URL: https://ssf-transmitter-xxxxxx-uc.a.run.app
 ```
 
@@ -242,7 +212,7 @@ That URL will become your **SSF_ISSUER**.
 
 --- 
 
-## 11. Update Service With REAL SSF_ISSUER
+## 10. Update Service With REAL SSF_ISSUER
 
 ```bash
 CLOUD_RUN_URL="https://ssf-transmitter-xxxxxx-uc.a.run.app"
