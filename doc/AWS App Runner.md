@@ -1,11 +1,28 @@
-# Deploying the Lookout → Okta SSF Transmitter on Google Cloud Run
+# Deploying the Lookout → Okta SSF Transmitter on AWS App Runner
 **Secret Manager–Aware Deployment Model**
 
-This guide walks customers and sales engineers through deploying the SSF Transmitter to **Google Cloud Run**, using **Secret Manager** for all sensitive data, and wiring it into Lookout Mobile Risk + Okta Identity Threat Protection.
+This guide walks customers and sales engineers through deploying the SSF Transmitter to **AWS App Runner**, using **AWS Secrets Manager** for all sensitive data, and wiring it into Lookout Mobile Risk + Okta Identity Threat Protection.
 
 ---
 
 ## 0. Overview
+
+The SSF Transmitter continuously polls Lookout Mobile Risk, converts device posture changes into SSF-compliant Security Event Tokens (SET), signs them with RS256, and sends them to Okta.
+
+```text
+Lookout Mobile Risk API
+        │
+        ▼
+SSF Transmitter (AWS App Runner)
+        • Poll Lookout risk
+        • Normalize risk levels
+        • Sign SET → RS256
+        • Publish to Okta SSF device-risk-change
+        ▼
+Okta Identity Threat Protection
+        ▼
+Adaptive Access Policies (MFA, block, logout, etc.)
+```
 
 Target flow:
 
