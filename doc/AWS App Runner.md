@@ -123,36 +123,47 @@ src/jwks.json
 
 --- 
 
-## 6. Store Secrets in Google Secret Manager (Secure)
+## 5. Store Secrets in AWS Secrets Manager (Secure)
 
 We’ll store:
 
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
 - (Optional) SSF_PRIVATE_KEY_PEM – contents of private.pem.
 
-### Create Secrets
+### Create secret for Lookout App Key:
 
 ```bash
-echo -n "<LOOKOUT_APP_KEY>" | \
-  gcloud secrets create LOOKOUT_APP_KEY --data-file=-
-
-gcloud secrets create SSF_PRIVATE_KEY --data-file=src/private.pem
+aws secretsmanager create-secret \
+  --name LOOKOUT_APP_KEY \
+  --secret-string "<YOUR_LOOKOUT_APP_KEY>"m
 ```
 
-### Grant Cloud Run access
+### Create secret for SSF private key:
 
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) \
-  --format="value(projectNumber)")
-
-gcloud secrets add-iam-policy-binding LOOKOUT_APP_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
-
-gcloud secrets add-iam-policy-binding SSF_PRIVATE_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
+aws secretsmanager create-secret \
+  --name SSF_PRIVATE_KEY_PEM \
+  --secret-string file://src/private.pem
 ```
+
+### (Optional) Store Okta Org URL in Secrets Manager
+
+```bash
+aws secretsmanager create-secret \
+  --name OKTA_ORG \
+  --secret-string "https://<your-okta-tenant>.okta.com"
+```
+
+---
+
+## 6. Required AWS Services
+
+Make sure the following are enabled:
+- Elastic Container Registry (ECR)
+- App Runner
+- CloudWatch Logs
+- Secrets Manager
+- IAM
 
 ---
 
@@ -162,36 +173,49 @@ Cloud Run uses two sources for environment variables:
 
 | Type | Where It Lives | What We Use It For |
 | --- | --- | --- |
-| Environment Vars | Stored in Cloud Run service definition | Non-sensitive values (URLs, toggles) |
-| Secret Manager Env Vars | Stored as secret mounts or injected env-vars | Sensitive values (private key, Lookout App Key) |
+| Sensitive values | Secrets Manager | Private key, Lookout App Key |
+| Non-sensitive values | App Runner Environment Variables | SSF_ISSUER, polling settings |
+| Injected secrets | App Runner → Runtime Environment | Automatically rotated |
 
 ### Our mapping:
 
-| Purpose | Storage | Example |
-| --- | --- | --- |
-| LOOKOUT_APP_KEY | Secret Manager | Injected via --set-secrets |
-| SSF_PRIVATE_KEY_PEM | Secret Manager | Injected via --set-secrets |
-| SSF_ISSUER | Cloud Run Env Var | the public HTTPS URL of the Cloud Run service (we’ll set it after first deploy) |
-| OKTA_ORG | Cloud Run Env Var | your Okta org URL (no trailing slash) | 
-| Polling configs | Cloud Run Env Vars | Non-sensitive | 
+| Purpose | Storage |
+| --- | --- |
+| LOOKOUT_APP_KEY | Secret Manager |
+| SSF_PRIVATE_KEY_PEM | Secret Manager |
+| OKTA_ORG | Secret Manager (optional) |
+| SSF_ISSUER | App Runner environment variables |
+| LOOKOUT_* configs | App Runner env vars |
 
 --- 
 
-## 8. Build & Push Container Image
+## 8. Build & Push Container Image to ECR
 
-### Create a repo:
+### Create an ECR repo:
 
 ```bash
-gcloud artifacts repositories create ssf-repo \
-  --repository-format=docker \
-  --location=us-central1
+aws ecr create-repository \
+  --repository-name ssf-transmitter \
+  --region us-east-1
 ```
 
-### Build & push:
+### Build the container:
 
 ```bash
-gcloud builds submit --tag \
-  us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest
+docker build -t ssf-transmitter .
+```
+
+### Tag it for ECR:
+
+```bash
+docker tag ssf-transmitter:latest \
+  <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest
+```
+
+### Push to ECR:
+
+```bash
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest
 ```
 
 --- 
@@ -201,40 +225,83 @@ gcloud builds submit --tag \
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
 
 ```bash
-gcloud run deploy ssf-transmitter \
-  --image us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest \
-  --allow-unauthenticated \
-  --set-env-vars OKTA_ORG="https://yourorg.okta.com" \
-  --set-env-vars SSF_ISSUER="https://placeholder" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
-  --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY:latest
+aws apprunner create-service \
+  --service-name ssf-transmitter \
+  --source-configuration "{
+    \"ImageRepository\": {
+      \"ImageIdentifier\": \"<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest\",
+      \"ImageRepositoryType\": \"ECR\",
+      \"ImageConfiguration\": {
+        \"Port\": \"8080\",
+        \"RuntimeEnvironmentVariables\": [
+          {\"Name\": \"SSF_ISSUER\", \"Value\": \"https://placeholder\"}
+        ]
+      }
+    },
+    \"AuthenticationConfiguration\": {
+      \"AccessRoleArn\": \"arn:aws:iam::<ACCOUNT_ID>:role/AppRunnerECRAccessRole\"
+    }
+  }"
 ```
 
 ### Record the service URL:
 
 ```text
-Service URL: https://ssf-transmitter-xxxxxx-uc.a.run.app
+Service URL: https://ssf-transmitter-xyz123.us-east-1.awsapprunner.com
 ```
 
 That URL will become your **SSF_ISSUER**.
 
 --- 
 
-## 10. Update Service With REAL SSF_ISSUER
+## 10. Attach Secrets to the Service
+
+### Get the Service ARN
 
 ```bash
-gcloud run services update ssf-transmitter \
-  --set-env-vars SSF_ISSUER="https://ssf-transmitter-xxxxx-uc.a.run.app"
+aws apprunner list-services --query "ServiceSummaryList[*].ServiceArn"
+```
+
+### Bind secrets
+
+```bash
+aws apprunner associate-custom-domain \
+  --service-arn <SERVICE_ARN> \
+  --environment-variables "[
+    {\"Name\": \"LOOKOUT_APP_KEY\", \"Value\": \"arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:LOOKOUT_APP_KEY\"},
+    {\"Name\": \"SSF_PRIVATE_KEY_PEM\", \"Value\": \"arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:SSF_PRIVATE_KEY_PEM\"}
+  ]"
+```
+
+---
+
+## 11. Update Service With REAL SSF_ISSUER
+
+```bash
+aws apprunner update-service \
+  --service-arn <SERVICE_ARN> \
+  --source-configuration "{
+    \"ImageRepository\": {
+      \"ImageIdentifier\": \"<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest\",
+      \"ImageRepositoryType\": \"ECR\",
+      \"ImageConfiguration\": {
+        \"Port\": \"8080\",
+        \"RuntimeEnvironmentVariables\": [
+          {\"Name\": \"SSF_ISSUER\", \"Value\": \"https://ssf-transmitter-xyz123.us-east-1.awsapprunner.com\"}
+        ]
+      }
+    }
+  }"
 ```
 
 --- 
 
-## 11. Validate Deployment
+## 12. Validate Deployment
 
 ### Health Check
 
 ```bash
-curl -i "$CLOUD_RUN_URL/healthz"
+curl https://<APP_RUNNER_URL>/healthz
 ```
 
 Expected:
@@ -247,7 +314,7 @@ ok
 ### SSF Discovery
 
 ```bash
-curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
+curl https://<APP_RUNNER_URL>/.well-known/ssf-configuration | jq
 ```
 
 Verify:
@@ -257,7 +324,7 @@ Verify:
 ### JWKS
 
 ```bash
-curl -s "$CLOUD_RUN_URL/jwks.json" | jq
+curl https://<APP_RUNNER_URL>/jwks.json | jq
 ```
 
 Check:
@@ -267,9 +334,7 @@ Check:
 ### Logs
 
 ```bash
-gcloud run services logs read "$SERVICE_NAME" \
-  --region us-central1 \
-  --limit 100
+aws logs tail /aws/apprunner/ssf-transmitter --follow
 ```
 
 Look for:
@@ -279,13 +344,13 @@ Look for:
 
 --- 
 
-## 12. Configure Okta SSF
+## 13. Configure Okta SSF
 
 In the Okta Admin console:
 1.	**Security → Signals Providers**
 2.	Add or edit the **Lookout SSF** provider.
 3.	Set:
-	- **Issuer URL** → SSF_ISSUER (Cloud Run URL)
+	- **Issuer URL** → SSF_ISSUER (APP_RUNNER_URL)
 	- **JWKS URL** → SSF_ISSUER/jwks.json
 4.	Save and verify Okta can reach the JWKS endpoint.
 
@@ -296,10 +361,10 @@ Then configure:
 
 --- 
 
-## 13. Functional Test
+## 14. Functional Test
 1.	On a test device enrolled in Lookout, trigger a **Medium** or **High threat** (e.g., controlled malicious app / network).
 2.	Wait for at least one poll interval (e.g., 60 seconds).
-3.	Check Cloud Run logs:
+3.	Check CloudWatch logs:
 	- [LookoutPoll] Sent risk event to /intake/lookout
 	- Okta SSF accepted SET: 202
 4.	In **Okta System Log**, filter for:
@@ -311,12 +376,12 @@ Then configure:
 	
 --- 
 
-## 14. Production Hardening
+## 15. Production Hardening
 
 For a production rollout:
 
-- Mount private.pem from **Secret Manager** (or refactor app to read from env-var-based secrets).
-- Restrict Cloud Run ingress if desired (e.g., only Okta IPs or via Cloud Armor).
-- Front the service with a **custom domain** + managed certificate for a branded SSF issuer.
-- Use **Workload Identity** instead of static credentials where applicable.
-- Turn on **Cloud Logging / Monitoring** alerts for SSF or Lookout API failures.
+- Use HTTPS custom domain
+- Restrict App Runner ingress
+- Rotate SSF signing key regularly
+- Use dedicated IAM roles
+- Enable App Runner auto-scaling limits
