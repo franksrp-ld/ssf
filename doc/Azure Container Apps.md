@@ -1,7 +1,7 @@
-# Deploying the Lookout → Okta SSF Transmitter on AWS App Runner
+# Deploying the Lookout → Okta SSF Transmitter on Azure Container Apps
 **Secret Manager–Aware Deployment Model**
 
-This guide walks customers and sales engineers through deploying the SSF Transmitter to **AWS App Runner**, using **AWS Secrets Manager** for all sensitive data, and wiring it into Lookout Mobile Risk + Okta Identity Threat Protection.
+This guide walks customers and sales engineers through deploying the SSF Transmitter to **Azure Container Apps**, using **Azure Key Vault** for all sensitive data, and wiring it into Lookout Mobile Risk + Okta Identity Threat Protection.
 
 ---
 
@@ -13,22 +13,26 @@ The SSF Transmitter continuously polls Lookout Mobile Risk, converts device post
 Lookout Mobile Risk API
         │
         ▼
-SSF Transmitter (AWS App Runner)
-        • Poll Lookout risk
-        • Normalize risk levels
-        • Sign SET → RS256
-        • Publish to Okta SSF device-risk-change
+SSF Transmitter (Azure Container Apps)
+        • Poll Lookout device posture
+        • Normalize risk levels (low/medium/high)
+        • Generate + sign SET (RS256)
+        • Deliver real-time device-risk-change to Okta
         ▼
 Okta Identity Threat Protection
         ▼
-Adaptive Access Policies (MFA, block, logout, etc.)
+Adaptive Authentication:
+        • Block access
+        • Logout + revoke tokens
+        • Step-up MFA
+        • Normal access
 ```
 
 Target flow:
 
 1. Build + push the SSF container image.
 2. Create **secrets** in Secret Manager.
-3. Deploy to **Cloud Run** (first with a placeholder `SSF_ISSUER`).
+3. Deploy to **Azure Container Apps** (first with a placeholder `SSF_ISSUER`).
 4. Update the service with the real public URL as `SSF_ISSUER`.
 5. Wire Okta SSF to the Cloud Run endpoint.
 6. Validate end-to-end using a real Lookout risk change.
@@ -39,9 +43,13 @@ Target flow:
 
 You’ll need:
 
-- An AWS account with admin or sufficient IAM privileges.
-- `AWS` CLI installed and up to date.
-- An ECR (Elastic Container Registry) enabled
+- An Azure subscription.
+- `Azure` CLI installed and up to date.
+- An Azure Container Apps extension:
+```bash
+az extension add --name containerapp
+```
+- An Azure Key Vault enabled
 - A Docker or another container builder
 - Git installed 
 - A Lookout tenant + App Key with access to Mobile Risk API (MRA).
@@ -51,19 +59,18 @@ You’ll need:
 
 ---
 
-## 2. Authenticate to AWS
+## 2. Authenticate to Azure
 
-Log in to AWS and configure credentials:
+Log in to Azure and configure credentials:
 
 ```bash
-aws configure
+az login
 ```
 
-Log in to ECR:
+Set your subscription:
 
 ```bash
-aws ecr get-login-password --region us-east-1 \
-  | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+az account set --subscription "<YOUR_SUBSCRIPTION_ID>"
 ```
 
 ---
@@ -123,47 +130,83 @@ src/jwks.json
 
 --- 
 
-## 5. Store Secrets in AWS Secrets Manager (Secure)
+## 5. Create Azure Resources
+
+Set baseline variables:
+
+```bash
+RESOURCE_GROUP="ssf-rg"
+LOCATION="eastus"
+CONTAINERAPPS_ENV="ssf-env"
+ACR_NAME="ssfacr$RANDOM"
+KEYVAULT_NAME="ssfkv$RANDOM"
+```
+
+### Create resource group
+
+```bash
+az acr create \
+  --resource-group $RESOURCE_GROUP \
+  --name $ACR_NAME \
+  --sku Basic
+```
+
+### Create Key Vault
+
+```bash
+az keyvault create \
+  --name $KEYVAULT_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION
+```
+
+---
+
+## 6. Store Secrets in Azure Key Vault (Secure)
 
 We’ll store:
 
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
 - (Optional) SSF_PRIVATE_KEY_PEM – contents of private.pem.
 
-### Create secret for Lookout App Key:
+### Store Lookout App Key:
 
 ```bash
-aws secretsmanager create-secret \
-  --name LOOKOUT_APP_KEY \
-  --secret-string "<YOUR_LOOKOUT_APP_KEY>"m
+az keyvault secret set \
+  --vault-name $KEYVAULT_NAME \
+  --name LOOKOUT-APP-KEY \
+  --value "<YOUR_LOOKOUT_APP_KEY>"
 ```
 
-### Create secret for SSF private key:
+### Store SSF private key:
 
 ```bash
-aws secretsmanager create-secret \
-  --name SSF_PRIVATE_KEY_PEM \
-  --secret-string file://src/private.pem
+az keyvault secret set \
+  --vault-name $KEYVAULT_NAME \
+  --name SSF-PRIVATE-PEM \
+  --file src/private.pem
 ```
 
-### (Optional) Store Okta Org URL in Secrets Manager
+### (Optional) Store Okta Org URL
 
 ```bash
-aws secretsmanager create-secret \
-  --name OKTA_ORG \
-  --secret-string "https://<your-okta-tenant>.okta.com"
+az keyvault secret set \
+  --vault-name $KEYVAULT_NAME \
+  --name OKTA-ORG \
+  --value "https://YOUR_OKTA_TENANT.okta.com"
 ```
 
 ---
 
-## 6. Required AWS Services
+## 7. Allow Container Apps to Read Key Vault Secrets
 
-Make sure the following are enabled:
-- Elastic Container Registry (ECR)
-- App Runner
-- CloudWatch Logs
-- Secrets Manager
-- IAM
+```bash
+az keyvault set-policy \
+  --name $KEYVAULT_NAME \
+  --resource-group $RESOURCE_GROUP \
+  --spn "$(az ad sp list --display-name "Microsoft.ContainerService" --query "[0].appId" -o tsv)" \
+  --secret-permissions get list
+```
 
 ---
 
@@ -189,109 +232,81 @@ Cloud Run uses two sources for environment variables:
 
 --- 
 
-## 8. Build & Push Container Image to ECR
+## 8. Build & Push Container to ACR
 
-### Create an ECR repo:
+### Login to ACR:
 
 ```bash
-aws ecr create-repository \
-  --repository-name ssf-transmitter \
-  --region us-east-1
+az acr login --name $ACR_NAME
 ```
 
-### Build the container:
+### Build and push:
 
 ```bash
-docker build -t ssf-transmitter .
-```
+IMAGE="$ACR_NAME.azurecr.io/ssf-transmitter:latest"
 
-### Tag it for ECR:
-
-```bash
-docker tag ssf-transmitter:latest \
-  <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest
-```
-
-### Push to ECR:
-
-```bash
-docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest
+az acr build \
+  --registry $ACR_NAME \
+  --image ssf-transmitter:latest .
 ```
 
 --- 
 
-## 9. First Deploy (Placeholder SSF_ISSUER)
+## 9. Create Azure Container Apps Environment
+
+```bash
+az containerapp env create \
+  --name $CONTAINERAPPS_ENV \
+  --resource-group $RESOURCE_GROUP \
+  --location $LOCATION
+```
+
+---
+
+## 10. First Deploy (Placeholder SSF_ISSUER)
 
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
 
 ```bash
-aws apprunner create-service \
-  --service-name ssf-transmitter \
-  --source-configuration "{
-    \"ImageRepository\": {
-      \"ImageIdentifier\": \"<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest\",
-      \"ImageRepositoryType\": \"ECR\",
-      \"ImageConfiguration\": {
-        \"Port\": \"8080\",
-        \"RuntimeEnvironmentVariables\": [
-          {\"Name\": \"SSF_ISSUER\", \"Value\": \"https://placeholder\"}
-        ]
-      }
-    },
-    \"AuthenticationConfiguration\": {
-      \"AccessRoleArn\": \"arn:aws:iam::<ACCOUNT_ID>:role/AppRunnerECRAccessRole\"
-    }
-  }"
+az containerapp create \
+  --name ssf-transmitter \
+  --resource-group $RESOURCE_GROUP \
+  --environment $CONTAINERAPPS_ENV \
+  --image $IMAGE \
+  --target-port 8080 \
+  --ingress external \
+  --env-vars \
+      SSF_ISSUER="https://placeholder" \
+      LOOKOUT_SINCE_MINUTES="5" \
+      LOOKOUT_POLL_INTERVAL_SECONDS="60" \
+  --secrets \
+      LOOKOUT_APP_KEY=keyvault://$KEYVAULT_NAME/LOOKOUT-APP-KEY \
+      SSF_PRIVATE_KEY_PEM=keyvault://$KEYVAULT_NAME/SSF-PRIVATE-PEM
 ```
 
-### Record the service URL:
+### Retrieve the service URL:
 
-```text
-Service URL: https://ssf-transmitter-xyz123.us-east-1.awsapprunner.com
+```bash
+APP_URL=$(az containerapp show \
+  --resource-group $RESOURCE_GROUP \
+  --name ssf-transmitter \
+  --query properties.configuration.ingress.fqdn \
+  -o tsv)
+
+echo $APP_URL
 ```
 
 That URL will become your **SSF_ISSUER**.
 
 --- 
 
-## 10. Attach Secrets to the Service
-
-### Get the Service ARN
-
-```bash
-aws apprunner list-services --query "ServiceSummaryList[*].ServiceArn"
-```
-
-### Bind secrets
-
-```bash
-aws apprunner associate-custom-domain \
-  --service-arn <SERVICE_ARN> \
-  --environment-variables "[
-    {\"Name\": \"LOOKOUT_APP_KEY\", \"Value\": \"arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:LOOKOUT_APP_KEY\"},
-    {\"Name\": \"SSF_PRIVATE_KEY_PEM\", \"Value\": \"arn:aws:secretsmanager:us-east-1:<ACCOUNT_ID>:secret:SSF_PRIVATE_KEY_PEM\"}
-  ]"
-```
-
----
-
 ## 11. Update Service With REAL SSF_ISSUER
 
 ```bash
-aws apprunner update-service \
-  --service-arn <SERVICE_ARN> \
-  --source-configuration "{
-    \"ImageRepository\": {
-      \"ImageIdentifier\": \"<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/ssf-transmitter:latest\",
-      \"ImageRepositoryType\": \"ECR\",
-      \"ImageConfiguration\": {
-        \"Port\": \"8080\",
-        \"RuntimeEnvironmentVariables\": [
-          {\"Name\": \"SSF_ISSUER\", \"Value\": \"https://ssf-transmitter-xyz123.us-east-1.awsapprunner.com\"}
-        ]
-      }
-    }
-  }"
+az containerapp update \
+  --name ssf-transmitter \
+  --resource-group $RESOURCE_GROUP \
+  --env-vars SSF_ISSUER="https://$APP_URL"
 ```
 
 --- 
@@ -301,7 +316,7 @@ aws apprunner update-service \
 ### Health Check
 
 ```bash
-curl https://<APP_RUNNER_URL>/healthz
+curl https://$APP_URL/healthz
 ```
 
 Expected:
@@ -314,7 +329,7 @@ ok
 ### SSF Discovery
 
 ```bash
-curl https://<APP_RUNNER_URL>/.well-known/ssf-configuration | jq
+curl https://$APP_URL/.well-known/ssf-configuration | jq
 ```
 
 Verify:
@@ -324,7 +339,7 @@ Verify:
 ### JWKS
 
 ```bash
-curl https://<APP_RUNNER_URL>/jwks.json | jq
+curl https://$APP_URL/jwks.json | jq
 ```
 
 Check:
@@ -334,7 +349,10 @@ Check:
 ### Logs
 
 ```bash
-aws logs tail /aws/apprunner/ssf-transmitter --follow
+az containerapp logs show \
+  --name ssf-transmitter \
+  --resource-group $RESOURCE_GROUP \
+  --follow
 ```
 
 Look for:
@@ -380,8 +398,11 @@ Then configure:
 
 For a production rollout:
 
-- Use HTTPS custom domain
-- Restrict App Runner ingress
-- Rotate SSF signing key regularly
-- Use dedicated IAM roles
-- Enable App Runner auto-scaling limits
+- Move to custom domain
+- Enforce TLS 1.2+
+- Lock down inbound traffic
+- Regex validation on Okta Org URL
+- Regular key rotation
+- Protect Key Vault with RBAC + firewall
+- Auto-scale Container Apps for load arrival
+- Enable Log Analytics Workspace
