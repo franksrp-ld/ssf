@@ -123,8 +123,8 @@ node gen-jwk.mjs
 ### Verify src/ now contains:
 
 ```text
-private.pem
-jwks.json
+src/private.pem
+src/jwks.json
 ```
 
 > [!IMPORTANT]
