@@ -78,14 +78,12 @@ gcloud services enable \
 ---  
 
 ## 4. Clone the Repository
-
 ```bash
 git clone https://github.com/franksrp-ld/ssf.git
 cd ssf
 ```
 
 ### Ensure the structure:
-
 ```bash
 ssf/
   Dockerfile
