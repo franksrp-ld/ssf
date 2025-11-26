@@ -108,10 +108,18 @@ ssf/
 > For PoC, you can generate the key locally and bake it into the image.
 > For production, consider storing it in Secret Manager and updating code to load from an env var.
 
-### Generate private.pem
+### Generate private key (2048-bit RSA)
 
 ```bash
-openssl genpkey -algorithm RSA -out scr/private.pem -pkeyopt rsa_keygen_bits:2048
+openssl genpkey -algorithm RSA \
+  -pkeyopt rsa_keygen_bits:2048 \
+  -out src/private.pem
+```
+
+### Generate matching public key
+
+```bash
+openssl rsa -in src/private.pem -pubout -out src/public.pem
 ```
 
 ### Generate jwks.json
