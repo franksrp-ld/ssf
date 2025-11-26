@@ -50,7 +50,6 @@ You’ll need:
 ---
 
 ## 2. Login to Google Cloud
-
 ```bash
 # Authenticate your user
 gcloud auth login
@@ -66,7 +65,6 @@ gcloud config set run/region us-central1
 ---
 
 ## 3. Enable Required Cloud APIs
-
 ```bash
 gcloud services enable \
   run.googleapis.com \
@@ -107,7 +105,6 @@ ssf/
 > For production, consider storing it in Secret Manager and updating code to load from an env var.
 
 ### Generate private key (2048-bit RSA)
-
 ```bash
 openssl genpkey -algorithm RSA \
   -pkeyopt rsa_keygen_bits:2048 \
@@ -115,13 +112,11 @@ openssl genpkey -algorithm RSA \
 ```
 
 ### Generate matching public key
-
 ```bash
 openssl rsa -in src/private.pem -pubout -out src/public.pem
 ```
 
 ### Install dependencies from repo root: (if not already done)
-
 ```bash
 cd ~/ssf
 npm install
@@ -130,13 +125,11 @@ npm install
 ### Generate jwks.json from the public key
 
 Run the generator from the repo root:
-
 ```bash
 cd ~/ssf
 node src/gen-jwk.mjs
 ```
 Expected output will look something like:
-
 ```bash
 Reading public key from: /Users/you/ssf/src/public.pem
 Wrote JWKS to: /Users/you/ssf/src/jwks.json
@@ -144,20 +137,17 @@ kid: lookout-ssf-key-1
 ```
 
 ### Verify src/ now contains:
-
 ```text
 src/private.pem
 src/jwks.json
 ```
 
 And a quick peek at the JWKS:
-
 ```bash
 cat src/jwks.json
 ```
 
 You should see a JSON blob like:
-
 ```json
 {
   "keys": [
@@ -188,7 +178,6 @@ We’ll store:
 - (Optional) LOOKOUT_ENTERPRISE_GUID - Upload Lookout Enterprise GUID
 
 ### Upload SSF Signing Key (private.pem)
-
 ```bash
 gcloud secrets create SSF_SIGNING_KEY --data-file=src/private.pem
 ```
@@ -196,7 +185,6 @@ gcloud secrets create SSF_SIGNING_KEY --data-file=src/private.pem
 ### Upload Lookout App Key
 
 Replace YOUR_LOOKOUT_APP_KEY with the real value:
-
 ```bash
 printf "%s" "YOUR_LOOKOUT_APP_KEY" | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
 ```
@@ -204,7 +192,6 @@ printf "%s" "YOUR_LOOKOUT_APP_KEY" | gcloud secrets create LOOKOUT_APP_KEY --dat
 ### Upload Okta Org URL
 
 Replace YOUR_OKTA_ORG with the real value:
-
 ```bash
 printf "%s" "YOUR_OKTA_ORG" | gcloud secrets create OKTA_ORG --data-file=-
 ```
@@ -212,7 +199,6 @@ printf "%s" "YOUR_OKTA_ORG" | gcloud secrets create OKTA_ORG --data-file=-
 ### (Optional) Upload Lookout Enterprise GUID
 
 Replace YOUR_LOOKOUT_ENTERPRISE_GUID with the real value:
-
 ```bash
 printf "%s" "YOUR_LOOKOUT_ENTERPRISE_GUID" | gcloud secrets create LOOKOUT_ENTERPRISE_GUID --data-file=-
 ```
@@ -222,7 +208,6 @@ printf "%s" "YOUR_LOOKOUT_ENTERPRISE_GUID" | gcloud secrets create LOOKOUT_ENTER
 ## ❗ STOP NOW AND VERIFY SECRETS
 
 Run:
-
 ```bash
 gcloud secrets list
 ```
@@ -243,7 +228,6 @@ If this list is missing anything → STOP and fix.
 ### Create a Dedicated Cloud Run Service Account
 
 Create a dedicated SA for the SSF transmitter.
-
 ```bash
 PROJECT_ID=$(gcloud config get-value project)
 
@@ -252,20 +236,17 @@ gcloud iam service-accounts create ssf-transmitter-sa \
 ```
 
 Just to confirm:
-
 ```bash
 gcloud iam service-accounts list \
   --filter="email:ssf-transmitter-sa"
 ```
 
 The service account email will be:
-
 ```text
 ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
 ### Grant Secret Accessor Role to the Service Account
-
 ```bash
 SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 
@@ -304,7 +285,6 @@ Cloud Run uses two sources for environment variables:
 ## 8. Build & Push Container Image
 
 ### Set Helper Variables
-
 ```bash
 PROJECT_ID=lookout-ssf-lookoutdemo
 REGION=us-central1
@@ -314,19 +294,16 @@ IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:latest"
 ```
 
 Check:
-
 ```bash
 echo $IMAGE_URI
 ```
 
 Expected format:
-
 ```text
 us-central1-docker.pkg.dev/<PROJECT_ID>/ssf-repo/ssf-transmitter:latest
 ```
 
 ### Create the Artifact Registry Repository (one-time)
-
 ```bash
 gcloud artifacts repositories create $REPO_NAME \
   --repository-format=docker \
@@ -344,11 +321,42 @@ You should see:
 ssf-repo   DOCKER  us-central1
 ```
 
-### Build & push:
+### Build & Push the Container Image (Cloud Build):
 
+Run this from the root of your repository:
+```
+cd ~/ssf
+
+gcloud builds submit --tag "$IMAGE_URI"
+```
+
+What this does:
+- Uploads your repo to Cloud Build
+- Runs your Dockerfile
+- Pushes the built image into Artifact Registry
+
+Expected successful output:
+```text
+DONE
+PUSH
+latest: digest: sha256:xxxxxx size: 1234
+```
+
+### Verify the Image Exists
 ```bash
-gcloud builds submit --tag \
-  us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest
+gcloud artifacts docker images list $IMAGE_URI
+```
+
+Or list the repo:
+```bash
+gcloud artifacts docker images list \
+  $REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME
+```
+
+You should see:
+```text
+IMAGE                          TAGS     DIGEST        ...
+ssf-transmitter                latest   sha256:abc123
 ```
 
 --- 
@@ -356,7 +364,6 @@ gcloud builds submit --tag \
 ## 9. First Deploy (Placeholder SSF_ISSUER)
 
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
-
 ```bash
 gcloud run deploy ssf-transmitter \
   --image us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest \
@@ -368,7 +375,6 @@ gcloud run deploy ssf-transmitter \
 ```
 
 ### Record the service URL:
-
 ```text
 Service URL: https://ssf-transmitter-xxxxxx-uc.a.run.app
 ```
@@ -378,7 +384,6 @@ That URL will become your **SSF_ISSUER**.
 --- 
 
 ## 10. Update Service With REAL SSF_ISSUER
-
 ```bash
 gcloud run services update ssf-transmitter \
   --set-env-vars SSF_ISSUER="https://ssf-transmitter-xxxxx-uc.a.run.app"
@@ -389,20 +394,17 @@ gcloud run services update ssf-transmitter \
 ## 11. Validate Deployment
 
 ### Health Check
-
 ```bash
 curl -i "$CLOUD_RUN_URL/healthz"
 ```
 
 Expected:
-
 ```text
 HTTP/2 200
 ok
 ```
 
 ### SSF Discovery
-
 ```bash
 curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
 ```
@@ -412,7 +414,6 @@ Verify:
 - jwks_uri points at ${SSF_ISSUER}/jwks.json.
 
 ### JWKS
-
 ```bash
 curl -s "$CLOUD_RUN_URL/jwks.json" | jq
 ```
@@ -422,7 +423,6 @@ Check:
 - alg is RS256.
 
 ### Logs
-
 ```bash
 gcloud run services logs read "$SERVICE_NAME" \
   --region us-central1 \
