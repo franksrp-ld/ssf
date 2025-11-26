@@ -286,21 +286,22 @@ Cloud Run uses two sources for environment variables:
 
 ### Set Helper Variables
 ```bash
-PROJECT_ID=lookout-ssf-lookoutdemo
-REGION=us-central1
-REPO_NAME=ssf-repo
-IMAGE_NAME=ssf-transmitter
-IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:latest"
+PROJECT_ID="<PROJECT_ID>"
+REGION="us-central1"
+REPO_NAME="ssf-repo"
+IMAGE_NAME="ssf-transmitter"
+
+IMAGE_URI="$REGION-docker.pkg.dev/${PROJECT_ID}/$REPO_NAME/${IMAGE_NAME}"
 ```
 
 Check:
 ```bash
-echo $IMAGE_URI
+echo "${IMAGE_URI}"
 ```
 
 Expected format:
 ```text
-us-central1-docker.pkg.dev/<PROJECT_ID>/ssf-repo/ssf-transmitter:latest
+us-central1-docker.pkg.dev/<PROJECT_ID>/ssf-repo/ssf-transmitter
 ```
 
 ### Create the Artifact Registry Repository (one-time)
@@ -327,7 +328,7 @@ Run this from the root of your repository:
 ```
 cd ~/ssf
 
-gcloud builds submit --tag "$IMAGE_URI"
+gcloud builds submit --tag "${IMAGE_URI}"
 ```
 
 What this does:
@@ -366,12 +367,28 @@ ssf-transmitter                latest   sha256:abc123
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
 ```bash
 gcloud run deploy ssf-transmitter \
-  --image us-central1-docker.pkg.dev/$PROJECT_ID/ssf-repo/ssf-transmitter:latest \
+  --image "${IMAGE_URI}:latest" \
+  --region "$REGION" \
+  --platform managed \
   --allow-unauthenticated \
-  --set-env-vars OKTA_ORG="https://yourorg.okta.com" \
+  --set-env-vars OKTA_ORG=use-secret-manager \
   --set-env-vars SSF_ISSUER="https://placeholder" \
   --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
-  --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY:latest
+  --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY_PEM:latest
+
+SERVICE_NAME="ssf-transmitter"
+IMAGE_NAME="ssf-transmitter"
+IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}"
+SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud run deploy "${SERVICE_NAME}" \
+  --image "${IMAGE_URI}:latest" \
+  --region "${REGION}" \
+  --platform managed \
+  --allow-unauthenticated \
+  --service-account="${SA_EMAIL}" \
+  --set-env-vars OKTA_ORG="use-secret-manager",SSF_ISSUER="https://placeholder" \
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY_PEM:latest
 ```
 
 ### Record the service URL:
