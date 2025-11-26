@@ -122,10 +122,27 @@ openssl genpkey -algorithm RSA \
 openssl rsa -in src/private.pem -pubout -out src/public.pem
 ```
 
-### Generate jwks.json
+### Install dependencies from repo root: (if not already done)
 
 ```bash
-node gen-jwk.mjs
+cd ~/ssf
+npm install
+```
+
+### Generate jwks.json from the public key
+
+Run the generator from the repo root:
+
+```bash
+cd ~/ssf
+node src/gen-jwk.mjs
+```
+Expected output will look something like:
+
+```bash
+Reading public key from: /Users/you/ssf/src/public.pem
+Wrote JWKS to: /Users/you/ssf/src/jwks.json
+kid: lookout-ssf-key-1
 ```
 
 ### Verify src/ now contains:
@@ -133,6 +150,29 @@ node gen-jwk.mjs
 ```text
 src/private.pem
 src/jwks.json
+```
+
+And a quick peek at the JWKS:
+
+```bash
+cat src/jwks.json
+```
+
+You should see a JSON blob like:
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "n": "....",
+      "e": "AQAB",
+      "use": "sig",
+      "alg": "RS256",
+      "kid": "lookout-ssf-key-1"
+    }
+  ]
+}
 ```
 
 > [!IMPORTANT]
