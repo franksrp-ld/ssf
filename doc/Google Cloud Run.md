@@ -266,18 +266,17 @@ The service account email will be:
 ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
-### Grant Cloud Run access
+### Grant Secret Accessor Role to the Service Account
 
 ```bash
-PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) \
-  --format="value(projectNumber)")
+SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud secrets add-iam-policy-binding LOOKOUT_APP_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 
 gcloud secrets add-iam-policy-binding SSF_PRIVATE_KEY \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
