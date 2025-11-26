@@ -240,6 +240,32 @@ Expected:
 
 If this list is missing anything → STOP and fix.
 
+---
+
+### Create a Dedicated Cloud Run Service Account
+
+Create a dedicated SA for the SSF transmitter.
+
+```bash
+PROJECT_ID=$(gcloud config get-value project)
+
+gcloud iam service-accounts create ssf-transmitter-sa \
+  --display-name="SSF Transmitter Service Account"
+```
+
+Just to confirm:
+
+```bash
+gcloud iam service-accounts list \
+  --filter="email:ssf-transmitter-sa"
+```
+
+The service account email will be:
+
+```text
+ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com
+```
+
 ### Grant Cloud Run access
 
 ```bash
