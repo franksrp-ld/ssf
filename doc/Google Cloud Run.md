@@ -111,7 +111,7 @@ ssf/
 ### Generate private.pem
 
 ```bash
-openssl genpkey -algorithm RSA -out private.pem -pkeyopt rsa_keygen_bits:2048
+openssl genpkey -algorithm RSA -out scr/private.pem -pkeyopt rsa_keygen_bits:2048
 ```
 
 ### Generate jwks.json
