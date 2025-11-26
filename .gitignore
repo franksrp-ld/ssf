@@ -43,3 +43,7 @@ docker-compose.override.yml
 # Ignore archives
 *.zip
 *.tar.gz
+
+# SSF signing keys - DO NOT COMMIT
+src/private.pem
+src/public.pem
