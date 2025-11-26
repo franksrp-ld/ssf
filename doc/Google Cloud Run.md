@@ -305,12 +305,45 @@ Cloud Run uses two sources for environment variables:
 
 ## 8. Build & Push Container Image
 
-### Create a repo:
+### Set Helper Variables
 
 ```bash
-gcloud artifacts repositories create ssf-repo \
+PROJECT_ID=lookout-ssf-lookoutdemo
+REGION=us-central1
+REPO_NAME=ssf-repo
+IMAGE_NAME=ssf-transmitter
+IMAGE_URI="$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME/$IMAGE_NAME:latest"
+```
+
+Check:
+
+```bash
+echo $IMAGE_URI
+```
+
+Expected format:
+
+```text
+us-central1-docker.pkg.dev/<PROJECT_ID>/ssf-repo/ssf-transmitter:latest
+```
+
+### Create the Artifact Registry Repository (one-time)
+
+```bash
+gcloud artifacts repositories create $REPO_NAME \
   --repository-format=docker \
-  --location=us-central1
+  --location=$REGION \
+  --description="Repository for SSF transmitter"
+```
+
+Verify:
+```bash
+gcloud artifacts repositories list --location $REGION
+```
+
+You should see:
+```text
+ssf-repo   DOCKER  us-central1
 ```
 
 ### Build & push:
