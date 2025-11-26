@@ -219,6 +219,27 @@ Replace YOUR_LOOKOUT_ENTERPRISE_GUID with the real value:
 printf "%s" "YOUR_LOOKOUT_ENTERPRISE_GUID" | gcloud secrets create LOOKOUT_ENTERPRISE_GUID --data-file=-
 ```
 
+---
+
+## ❗ STOP NOW AND VERIFY SECRETS
+
+Run:
+
+```bash
+gcloud secrets list
+```
+
+Expected:
+
+| SECRET NAME | PURPOSE |
+| --- | --- |
+| SSF_SIGNING_KEY | RS256 private.pem |
+| LOOKOUT_APP_KEY | Lookout API key |
+| OKTA_ORG | Okta org URL |
+| (optional) LOOKOUT_ENTERPRISE_GUID | Tenant scoping |
+
+If this list is missing anything → STOP and fix.
+
 ### Grant Cloud Run access
 
 ```bash
