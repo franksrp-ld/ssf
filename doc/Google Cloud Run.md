@@ -185,15 +185,38 @@ You should see a JSON blob like:
 We’ll store:
 
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
-- (Optional) SSF_PRIVATE_KEY_PEM – contents of private.pem.
+- SSF_PRIVATE_KEY_PEM – contents of private.pem.
+- OKTA_ORG - Okta Org URL
+- (Optional) LOOKOUT_ENTERPRISE_GUID - Upload Lookout Enterprise GUID
 
-### Create Secrets
+### Upload SSF Signing Key (private.pem)
 
 ```bash
-echo -n "<LOOKOUT_APP_KEY>" | \
-  gcloud secrets create LOOKOUT_APP_KEY --data-file=-
+gcloud secrets create SSF_SIGNING_KEY --data-file=src/private.pem
+```
 
-gcloud secrets create SSF_PRIVATE_KEY --data-file=src/private.pem
+### Upload Lookout App Key
+
+Replace YOUR_LOOKOUT_APP_KEY with the real value:
+
+```bash
+printf "%s" "YOUR_LOOKOUT_APP_KEY" | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
+```
+
+### Upload Okta Org URL
+
+Replace YOUR_OKTA_ORG with the real value:
+
+```bash
+printf "%s" "YOUR_OKTA_ORG" | gcloud secrets create OKTA_ORG --data-file=-
+```
+
+### (Optional) Upload Lookout Enterprise GUID
+
+Replace YOUR_LOOKOUT_ENTERPRISE_GUID with the real value:
+
+```bash
+printf "%s" "YOUR_LOOKOUT_ENTERPRISE_GUID" | gcloud secrets create LOOKOUT_ENTERPRISE_GUID --data-file=-
 ```
 
 ### Grant Cloud Run access
