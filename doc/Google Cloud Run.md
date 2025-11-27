@@ -174,8 +174,6 @@ We’ll store:
 
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
 - SSF_SIGNING_KEY – contents of private.pem.
-- OKTA_ORG - Okta Org URL
-- (Optional) LOOKOUT_ENTERPRISE_GUID - Upload Lookout Enterprise GUID
 
 ### Upload SSF Signing Key (private.pem)
 ```bash
@@ -188,20 +186,6 @@ Replace YOUR_LOOKOUT_APP_KEY with the real value:
 ```bash
 echo -n "paste-your-actual-lookout-app-key-here" \
   | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
-```
-
-### Upload Okta Org URL
-
-Replace YOUR_OKTA_ORG with the real value:
-```bash
-printf "%s" "YOUR_OKTA_ORG" | gcloud secrets create OKTA_ORG --data-file=-
-```
-
-### (Optional) Upload Lookout Enterprise GUID
-
-Replace YOUR_LOOKOUT_ENTERPRISE_GUID with the real value:
-```bash
-printf "%s" "YOUR_LOOKOUT_ENTERPRISE_GUID" | gcloud secrets create LOOKOUT_ENTERPRISE_GUID --data-file=-
 ```
 
 ---
@@ -377,6 +361,21 @@ gcloud run deploy "${SERVICE_NAME}" \
   --allow-unauthenticated \
   --service-account="${SA_EMAIL}" \
   --set-env-vars OKTA_ORG="<Your Okta Org URL>",SSF_ISSUER="https://placeholder" \
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest
+
+SERVICE_NAME="ssf-transmitter"
+IMAGE_NAME="ssf-transmitter"
+IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}"
+SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+
+gcloud run deploy "${SERVICE_NAME}" \
+  --image "${IMAGE_URI}:latest" \
+  --region "${REGION}" \
+  --platform managed \
+  --allow-unauthenticated \
+  --service-account="${SA_EMAIL}" \
+  --set-env-vars OKTA_ORG="https://integrator-2974929.okta.com" \
+  --set-env-vars SSF_ISSUER="$SERVICE_URL" \
   --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest
 ```
 
