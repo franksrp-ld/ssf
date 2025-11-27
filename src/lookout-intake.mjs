@@ -1,59 +1,68 @@
 // src/lookout-intake.mjs
-import { readFile } from "fs/promises";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const ISSUER = process.env.SSF_ISSUER;
 const OKTA_ORG = process.env.OKTA_ORG;
 
-if (!ISSUER) throw new Error("Missing SSF_ISSUER env var");
-if (!OKTA_ORG) throw new Error("Missing OKTA_ORG env var");
+if (!ISSUER) throw new Error("Missing SSF_ISSUER");
+if (!OKTA_ORG) throw new Error("Missing OKTA_ORG");
 
 const ALG = "RS256";
 const KID = "lookout-ssf-key-1";
 
 let privateKeyPromise;
 
+/**
+ * Lazily load and parse the private key from the SSF_SIGNING_KEY env var.
+ * The value should be a full PEM string (including -----BEGIN PRIVATE KEY-----).
+ */
 async function getPrivateKey() {
   if (!privateKeyPromise) {
     privateKeyPromise = (async () => {
-      let pem = (process.env.SSF_SIGNING_KEY || "").trim();
+      const pem = process.env.SSF_SIGNING_KEY;
 
-      if (pem) {
-        console.log("[SSF] Using private key from SSF_SIGNING_KEY env var");
-      } else {
-        // Local dev fallback: read src/private.pem
-        const pemPath = join(__dirname, "private.pem");
-        console.log("[SSF] SSF_SIGNING_KEY not set; reading file:", pemPath);
-        pem = await readFile(pemPath, "utf8");
-      }
-
-      if (!pem || !pem.includes("BEGIN PRIVATE KEY")) {
+      if (!pem || !pem.trim()) {
         throw new Error(
-          "SSF signing key is invalid or missing. Ensure SSF_SIGNING_KEY contains a PKCS#8 PEM."
+          "Missing SSF_SIGNING_KEY env var (expected PEM private key string)"
         );
       }
 
+      // Do NOT strip newlines – JOSE expects valid PEM
       return importPKCS8(pem, ALG);
     })();
   }
   return privateKeyPromise;
 }
 
+/**
+ * Normalize arbitrary Lookout risk strings -> low/medium/high
+ */
 function normalizeRiskLevel(raw) {
   const v = String(raw || "").toLowerCase();
-  if (["critical", "severe", "high", "threats_high", "threats_critical"].includes(v))
+
+  if (
+    v === "threats_high" ||
+    v === "threats_critical" ||
+    v === "high" ||
+    v === "critical" ||
+    v === "severe"
+  ) {
     return "high";
-  if (["medium", "moderate", "threats_medium"].includes(v)) return "medium";
+  }
+
+  if (v === "threats_medium" || v === "medium" || v === "moderate") {
+    return "medium";
+  }
+
+  // THREATS_LOW, SECURE, unknown → low
   return "low";
 }
 
-sync function sendSetToOkta(payload) {
+/**
+ * POST a signed SET to Okta's /security-events endpoint
+ */
+async function sendSetToOkta(payload) {
   const key = await getPrivateKey();
 
   const jwt = await new SignJWT(payload)
@@ -82,6 +91,11 @@ sync function sendSetToOkta(payload) {
   console.log("Okta SSF accepted SET:", resp.status);
 }
 
+/**
+ * HTTP handler for POST /intake/lookout
+ * Accepts a JSON payload in our internal "Lookout event" format and
+ * transforms it into a device-risk-change SET for Okta.
+ */
 export async function handleLookoutIntake(req, res) {
   try {
     // Read raw request body
@@ -108,7 +122,7 @@ export async function handleLookoutIntake(req, res) {
     const lookoutCurrent = body?.risk?.current_level;
     const lookoutPrevious = body?.risk?.previous_level;
     const reason =
-      body?.risk?.reason || "Lookout updated device/user risk via SSF transmitter";
+      body?.risk?.reason || "Lookout updated device/user risk";
 
     if (!userEmail || !lookoutCurrent) {
       res.writeHead(400, { "Content-Type": "application/json" });
@@ -135,21 +149,22 @@ export async function handleLookoutIntake(req, res) {
       iat: nowSeconds,
       jti: crypto.randomUUID(),
       events: {
-        "https://schemas.okta.com/secevent/okta/event-type/device-risk-change": {
-          event_timestamp: eventTsSeconds,
-          current_level: currentLevel,
-          previous_level: previousLevel,
-          initiating_entity: "system",
-          reason_admin: {
-            en: reason,
-          },
-          subject: {
-            user: {
-              format: "email",
-              email: userEmail,
+        "https://schemas.okta.com/secevent/okta/event-type/device-risk-change":
+          {
+            event_timestamp: eventTsSeconds,
+            current_level: currentLevel,
+            previous_level: previousLevel,
+            initiating_entity: "system",
+            reason_admin: {
+              en: reason,
+            },
+            subject: {
+              user: {
+                format: "email",
+                email: userEmail,
+              },
             },
           },
-        },
       },
     };
 
