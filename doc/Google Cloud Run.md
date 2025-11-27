@@ -258,7 +258,7 @@ Cloud Run uses two sources for environment variables:
 | Purpose | Storage | Example |
 | --- | --- | --- |
 | LOOKOUT_APP_KEY | Secret Manager | Injected via --set-secrets |
-| SSF_PRIVATE_KEY_PEM | Secret Manager | Injected via --set-secrets |
+| SSF_SIGNING_KEY | Secret Manager | Injected via --set-secrets |
 | SSF_ISSUER | Cloud Run Env Var | the public HTTPS URL of the Cloud Run service (we’ll set it after first deploy) |
 | OKTA_ORG | Cloud Run Env Var | your Okta org URL (no trailing slash) | 
 | Polling configs | Cloud Run Env Vars | Non-sensitive | 
@@ -361,7 +361,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --allow-unauthenticated \
   --service-account="${SA_EMAIL}" \
   --set-env-vars OKTA_ORG="<Your Okta Org URL>",SSF_ISSUER="https://placeholder" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
+  --set-secrets SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest \
 
 SERVICE_NAME="ssf-transmitter"
 IMAGE_NAME="ssf-transmitter"
@@ -376,7 +377,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --service-account="${SA_EMAIL}" \
   --set-env-vars OKTA_ORG="https://integrator-2974929.okta.com" \
   --set-env-vars SSF_ISSUER="$SERVICE_URL" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
+  --set-secrets SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest \
 ```
 
 ### Record the service URL:
