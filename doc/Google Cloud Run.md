@@ -184,8 +184,8 @@ gcloud secrets create SSF_SIGNING_KEY --data-file=src/private.pem
 
 Replace LOOKOUT_APP_KEY with the real value:
 ```bash
-echo -n "paste-your-actual-lookout-app-key-here" \
-  | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
+printf "%s" "LOOKOUT_APP_KEY" | \
+  gcloud secrets create LOOKOUT_APP_KEY --data-file=-
 ```
 
 ---
