@@ -55,7 +55,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Health endpoint
-    if (path === "/healthz" && (method === "GET" || method === "HEAD")) {
+    if (path === "/status" && (method === "GET" || method === "HEAD")) {
       res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end("ok");
     }
