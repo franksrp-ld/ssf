@@ -1,5 +1,4 @@
 // src/lookout-intake.mjs
-import { readFile } from "fs/promises";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
 
@@ -26,10 +25,7 @@ let privateKeyPromise;
 
 async function getPrivateKey() {
   if (!privateKeyPromise) {
-    privateKeyPromise = (async () => {
-      const pem = await readFile("./private.pem", "utf8");   // <-- FIXED PATH
-      return importPKCS8(pem, ALG);
-    })();
+    privateKeyPromise = importPKCS8(PRIVATE_KEY_PEM, ALG);
   }
   return privateKeyPromise;
 }
@@ -72,15 +68,24 @@ async function sendSetToOkta(payload) {
 
 export async function handleLookoutIntake(req, res) {
   try {
+    // Read raw request body
     const chunks = [];
-    for await (const chunk of req) chunks.push(chunk);
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
     const bodyStr = Buffer.concat(chunks).toString("utf8");
 
     let body;
-    try { body = JSON.parse(bodyStr || "{}"); }
-    catch (e) {
+    try {
+      body = JSON.parse(bodyStr || "{}");
+    } catch (e) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({ error: "invalid_json", detail: e.message }));
+      return res.end(
+        JSON.stringify({
+          error: "invalid_json",
+          detail: e.message
+        })
+      );
     }
 
     const userEmail = body?.user?.email;
@@ -106,7 +111,7 @@ export async function handleLookoutIntake(req, res) {
     const payload = {
       iss: ISSUER,
       aud: OKTA_ORG,
-      iat: Math.floor(Date.now() / 1000),
+      iat: nowSeconds,
       jti: crypto.randomUUID(),
       events: {
         "https://schemas.okta.com/secevent/okta/event-type/device-risk-change": {
@@ -114,8 +119,15 @@ export async function handleLookoutIntake(req, res) {
           current_level: currentLevel,
           previous_level: previousLevel,
           initiating_entity: "system",
-          reason_admin: { en: reason },
-          subject: { user: { format: "email", email: userEmail } }
+          reason_admin: {
+            en: reason
+          },
+          subject: {
+            user: {
+              format: "email",
+              email: userEmail
+            }
+          }
         }
       }
     };
