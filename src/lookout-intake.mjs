@@ -5,6 +5,7 @@ import crypto from "crypto";
 
 const ISSUER = process.env.SSF_ISSUER;
 const OKTA_ORG = process.env.OKTA_ORG;
+const PRIVATE_KEY_PEM = process.env.SSF_SIGNING_KEY;
 
 if (!ISSUER) throw new Error("Missing SSF_ISSUER");
 if (!OKTA_ORG) throw new Error("Missing OKTA_ORG");
