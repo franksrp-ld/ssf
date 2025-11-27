@@ -1,22 +1,18 @@
 // src/lookout-intake.mjs
+import { readFile } from "fs/promises";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import { SignJWT, importPKCS8 } from "jose";
 import crypto from "crypto";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 const ISSUER = process.env.SSF_ISSUER;
 const OKTA_ORG = process.env.OKTA_ORG;
-const PRIVATE_KEY_PEM = process.env.SSF_SIGNING_KEY;
 
-if (!ISSUER) {
-  throw new Error("Missing SSF_ISSUER env var");
-}
-if (!OKTA_ORG) {
-  throw new Error("Missing OKTA_ORG env var");
-}
-if (!PRIVATE_KEY_PEM) {
-  throw new Error(
-    "Missing SSF_SIGNING_KEY env var (Cloud Run secret not mapped?)"
-  );
-}
+if (!ISSUER) throw new Error("Missing SSF_ISSUER env var");
+if (!OKTA_ORG) throw new Error("Missing OKTA_ORG env var");
 
 const ALG = "RS256";
 const KID = "lookout-ssf-key-1";
@@ -25,19 +21,39 @@ let privateKeyPromise;
 
 async function getPrivateKey() {
   if (!privateKeyPromise) {
-    privateKeyPromise = importPKCS8(PRIVATE_KEY_PEM, ALG);
+    privateKeyPromise = (async () => {
+      let pem = (process.env.SSF_SIGNING_KEY || "").trim();
+
+      if (pem) {
+        console.log("[SSF] Using private key from SSF_SIGNING_KEY env var");
+      } else {
+        // Local dev fallback: read src/private.pem
+        const pemPath = join(__dirname, "private.pem");
+        console.log("[SSF] SSF_SIGNING_KEY not set; reading file:", pemPath);
+        pem = await readFile(pemPath, "utf8");
+      }
+
+      if (!pem || !pem.includes("BEGIN PRIVATE KEY")) {
+        throw new Error(
+          "SSF signing key is invalid or missing. Ensure SSF_SIGNING_KEY contains a PKCS#8 PEM."
+        );
+      }
+
+      return importPKCS8(pem, ALG);
+    })();
   }
   return privateKeyPromise;
 }
 
 function normalizeRiskLevel(raw) {
   const v = String(raw || "").toLowerCase();
-  if (["critical", "severe", "high"].includes(v)) return "high";
-  if (["medium", "moderate"].includes(v)) return "medium";
+  if (["critical", "severe", "high", "threats_high", "threats_critical"].includes(v))
+    return "high";
+  if (["medium", "moderate", "threats_medium"].includes(v)) return "medium";
   return "low";
 }
 
-async function sendSetToOkta(payload) {
+sync function sendSetToOkta(payload) {
   const key = await getPrivateKey();
 
   const jwt = await new SignJWT(payload)
@@ -83,7 +99,7 @@ export async function handleLookoutIntake(req, res) {
       return res.end(
         JSON.stringify({
           error: "invalid_json",
-          detail: e.message
+          detail: e.message,
         })
       );
     }
@@ -91,14 +107,17 @@ export async function handleLookoutIntake(req, res) {
     const userEmail = body?.user?.email;
     const lookoutCurrent = body?.risk?.current_level;
     const lookoutPrevious = body?.risk?.previous_level;
-    const reason = body?.risk?.reason || "Lookout updated device/user risk";
+    const reason =
+      body?.risk?.reason || "Lookout updated device/user risk via SSF transmitter";
 
     if (!userEmail || !lookoutCurrent) {
       res.writeHead(400, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify({
-        error: "missing_fields",
-        detail: "user.email and risk.current_level are required",
-      }));
+      return res.end(
+        JSON.stringify({
+          error: "missing_fields",
+          detail: "user.email and risk.current_level are required",
+        })
+      );
     }
 
     const currentLevel = normalizeRiskLevel(lookoutCurrent);
@@ -107,6 +126,8 @@ export async function handleLookoutIntake(req, res) {
     const eventTsSeconds = body?.event_timestamp
       ? Math.floor(new Date(body.event_timestamp).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
 
     const payload = {
       iss: ISSUER,
@@ -120,30 +141,32 @@ export async function handleLookoutIntake(req, res) {
           previous_level: previousLevel,
           initiating_entity: "system",
           reason_admin: {
-            en: reason
+            en: reason,
           },
           subject: {
             user: {
               format: "email",
-              email: userEmail
-            }
-          }
-        }
-      }
+              email: userEmail,
+            },
+          },
+        },
+      },
     };
 
     console.log("Built SET payload from Lookout intake:", payload);
+
     await sendSetToOkta(payload);
 
     res.writeHead(202, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ status: "accepted" }));
-
   } catch (err) {
     console.error("Error in /intake/lookout:", err);
     res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      error: "internal_error",
-      message: err.message,
-    }));
+    res.end(
+      JSON.stringify({
+        error: "internal_error",
+        message: err.message,
+      })
+    );
   }
 }
