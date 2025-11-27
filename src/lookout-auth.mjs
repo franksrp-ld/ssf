@@ -13,19 +13,18 @@ export async function getLookoutToken() {
     return tokenCache.token;
   }
 
-  const url = process.env.LOOKOUT_TOKEN_URL || "https://api.lookout.com/oauth2/token";
+  const url =
+    process.env.LOOKOUT_TOKEN_URL ||
+    "https://api.lookout.com/oauth2/token";
+
   const rawAppKey = process.env.LOOKOUT_APP_KEY;
 
-  const appKey = (rawAppKey || "").trim();
-
-  if (!appKey) {
-    throw new Error("Missing LOOKOUT_APP_KEY env var (empty after trim)");
+  if (!rawAppKey) {
+    throw new Error("Missing LOOKOUT_APP_KEY env var");
   }
 
-  // Optional: one-time debug log so you can confirm there are no weird chars
-  if (process.env.DEBUG_LOOKOUT_KEY === "1") {
-    console.log("[DEBUG] LOOKOUT_APP_KEY length:", appKey.length);
-  }
+  // 🚨 CRITICAL: strip whitespace/newlines that break HTTP headers
+  const appKey = rawAppKey.trim();
 
   const res = await fetch(url, {
     method: "POST",
@@ -45,7 +44,7 @@ export async function getLookoutToken() {
   const json = await res.json();
 
   tokenCache.token = json.access_token;
-  tokenCache.expiresAt = now + (json.expires_in - 60) * 1000;
+  tokenCache.expiresAt = now + (json.expires_in - 60) * 1000; // refresh 1 min early
 
   return tokenCache.token;
 }
