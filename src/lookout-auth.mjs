@@ -14,17 +14,22 @@ export async function getLookoutToken() {
   }
 
   const url =
-    process.env.LOOKOUT_TOKEN_URL ||
-    "https://api.lookout.com/oauth2/token";
+    process.env.LOOKOUT_TOKEN_URL || "https://api.lookout.com/oauth2/token";
 
-  const rawAppKey = process.env.LOOKOUT_APP_KEY;
+  // 🔑 Read from env and strip any whitespace/newlines
+  const rawAppKey = process.env.LOOKOUT_APP_KEY || "";
+  const appKey = rawAppKey.replace(/\s+/g, ""); // removes \n, \r, spaces, tabs, etc.
 
-  if (!rawAppKey) {
-    throw new Error("Missing LOOKOUT_APP_KEY env var");
+  if (!appKey) {
+    throw new Error("Missing LOOKOUT_APP_KEY env var (empty after trimming)");
   }
 
-  // 🚨 CRITICAL: strip whitespace/newlines that break HTTP headers
-  const appKey = rawAppKey.trim();
+  // Optional: very safe debug to confirm shape (won't leak secret)
+  if (rawAppKey.length !== appKey.length) {
+    console.warn(
+      "[LookoutAuth] LOOKOUT_APP_KEY contained whitespace; sanitized for header use."
+    );
+  }
 
   const res = await fetch(url, {
     method: "POST",
