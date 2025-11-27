@@ -363,22 +363,6 @@ gcloud run deploy "${SERVICE_NAME}" \
   --set-env-vars OKTA_ORG="<Your Okta Org URL>",SSF_ISSUER="https://placeholder" \
   --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
   --set-secrets SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest \
-
-SERVICE_NAME="ssf-transmitter"
-IMAGE_NAME="ssf-transmitter"
-IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}"
-SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-
-gcloud run deploy "${SERVICE_NAME}" \
-  --image "${IMAGE_URI}:latest" \
-  --region "${REGION}" \
-  --platform managed \
-  --allow-unauthenticated \
-  --service-account="${SA_EMAIL}" \
-  --set-env-vars OKTA_ORG="https://integrator-2974929.okta.com" \
-  --set-env-vars SSF_ISSUER="$SERVICE_URL" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
-  --set-secrets SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest \
 ```
 
 ### Record the service URL:
