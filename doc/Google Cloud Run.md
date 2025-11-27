@@ -173,7 +173,7 @@ You should see a JSON blob like:
 We’ll store:
 
 - LOOKOUT_APP_KEY – Lookout API app key (string value).
-- SSF_PRIVATE_KEY_PEM – contents of private.pem.
+- SSF_SIGNING_KEY – contents of private.pem.
 - OKTA_ORG - Okta Org URL
 - (Optional) LOOKOUT_ENTERPRISE_GUID - Upload Lookout Enterprise GUID
 
@@ -186,7 +186,8 @@ gcloud secrets create SSF_SIGNING_KEY --data-file=src/private.pem
 
 Replace YOUR_LOOKOUT_APP_KEY with the real value:
 ```bash
-printf "%s" "YOUR_LOOKOUT_APP_KEY" | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
+echo -n "paste-your-actual-lookout-app-key-here" \
+  | gcloud secrets create LOOKOUT_APP_KEY --data-file=-
 ```
 
 ### Upload Okta Org URL
@@ -218,8 +219,6 @@ Expected:
 | --- | --- |
 | SSF_SIGNING_KEY | RS256 private.pem |
 | LOOKOUT_APP_KEY | Lookout API key |
-| OKTA_ORG | Okta org URL |
-| (optional) LOOKOUT_ENTERPRISE_GUID | Tenant scoping |
 
 If this list is missing anything → STOP and fix.
 
@@ -254,7 +253,7 @@ gcloud secrets add-iam-policy-binding LOOKOUT_APP_KEY \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 
-gcloud secrets add-iam-policy-binding SSF_PRIVATE_KEY \
+gcloud secrets add-iam-policy-binding SSF_SIGNING_KEY \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 ```
@@ -366,16 +365,6 @@ ssf-transmitter                latest   sha256:abc123
 
 We’ll deploy once with a placeholder SSF_ISSUER and wire secrets.
 ```bash
-gcloud run deploy ssf-transmitter \
-  --image "${IMAGE_URI}:latest" \
-  --region "$REGION" \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars OKTA_ORG=use-secret-manager \
-  --set-env-vars SSF_ISSUER="https://placeholder" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
-  --set-secrets SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY_PEM:latest
-
 SERVICE_NAME="ssf-transmitter"
 IMAGE_NAME="ssf-transmitter"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}"
@@ -387,8 +376,8 @@ gcloud run deploy "${SERVICE_NAME}" \
   --platform managed \
   --allow-unauthenticated \
   --service-account="${SA_EMAIL}" \
-  --set-env-vars OKTA_ORG="use-secret-manager",SSF_ISSUER="https://placeholder" \
-  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_PRIVATE_KEY_PEM=SSF_PRIVATE_KEY_PEM:latest
+  --set-env-vars OKTA_ORG="<Your Okta Org URL>",SSF_ISSUER="https://placeholder" \
+  --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest,SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest
 ```
 
 ### Record the service URL:
@@ -403,7 +392,7 @@ That URL will become your **SSF_ISSUER**.
 ## 10. Update Service With REAL SSF_ISSUER
 ```bash
 gcloud run services update ssf-transmitter \
-  --set-env-vars SSF_ISSUER="https://ssf-transmitter-xxxxx-uc.a.run.app"
+  --set-env-vars SSF_ISSUER="$SERVICE_URL"
 ```
 
 --- 
@@ -412,7 +401,7 @@ gcloud run services update ssf-transmitter \
 
 ### Health Check
 ```bash
-curl -i "$CLOUD_RUN_URL/healthz"
+curl -i "$SERVICE_URL/healthz"
 ```
 
 Expected:
@@ -423,7 +412,7 @@ ok
 
 ### SSF Discovery
 ```bash
-curl -s "$CLOUD_RUN_URL/.well-known/ssf-configuration" | jq
+curl -s "$SERVICE_URL/.well-known/ssf-configuration" | jq
 ```
 
 Verify:
@@ -432,7 +421,7 @@ Verify:
 
 ### JWKS
 ```bash
-curl -s "$CLOUD_RUN_URL/jwks.json" | jq
+curl -s "$SERVICE_URL/jwks.json" | jq
 ```
 
 Check:
@@ -459,7 +448,7 @@ In the Okta Admin console:
 1.	**Security → Signals Providers**
 2.	Add or edit the **Lookout SSF** provider.
 3.	Set:
-	- **Issuer URL** → SSF_ISSUER (Cloud Run URL)
+	- **Issuer URL** → SSF_ISSUER
 	- **JWKS URL** → SSF_ISSUER/jwks.json
 4.	Save and verify Okta can reach the JWKS endpoint.
 
