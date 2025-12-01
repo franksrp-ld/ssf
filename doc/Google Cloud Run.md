@@ -353,6 +353,7 @@ SERVICE_NAME="ssf-transmitter"
 IMAGE_NAME="ssf-transmitter"
 IMAGE_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO_NAME}/${IMAGE_NAME}"
 SA_EMAIL="ssf-transmitter-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+OKTA_ORG="<Your Okta Org URL (do not include the training /)>"
 
 gcloud run deploy "${SERVICE_NAME}" \
   --image "${IMAGE_URI}:latest" \
@@ -360,7 +361,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --platform managed \
   --allow-unauthenticated \
   --service-account="${SA_EMAIL}" \
-  --set-env-vars OKTA_ORG="<Your Okta Org URL (do not include the training /)>",SSF_ISSUER="https://placeholder" \
+  --set-env-vars OKTA_ORG="${OKTA_ORG}",SSF_ISSUER="https://placeholder" \
   --set-secrets LOOKOUT_APP_KEY=LOOKOUT_APP_KEY:latest \
   --set-secrets SSF_SIGNING_KEY=SSF_SIGNING_KEY:latest \
 ```
@@ -376,6 +377,8 @@ That URL will become your **SSF_ISSUER**.
 
 ## 10. Update Service With REAL SSF_ISSUER
 ```bash
+SERVICE_URL="<Service URL from above>"
+
 gcloud run services update ssf-transmitter \
   --set-env-vars SSF_ISSUER="$SERVICE_URL"
 ```
