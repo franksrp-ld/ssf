@@ -1,5 +1,11 @@
 # How to Create a Google Cloud Project with Billing Enabled
 
+## Login to Google Cloud
+Authenticate your user
+```bash
+gcloud auth login
+```
+
 ## Create the New Project
 
 Pick a unique project ID:
