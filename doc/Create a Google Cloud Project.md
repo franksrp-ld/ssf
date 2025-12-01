@@ -58,6 +58,11 @@ Confirm:
 ```bash
 gcloud config get-value project
 ```
+
+Expected:
+```text
+lookout-ssf-XXX
+```
  			
 ## Enable Required APIs 
 Enable APIs:
