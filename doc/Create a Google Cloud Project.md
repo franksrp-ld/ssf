@@ -3,39 +3,63 @@
 ## Create the New Project
 
 Pick a unique project ID:
-```text
+```bash
 PROJECT_ID="lookout-ssf-XXX"
 ```
 Create the project:
 ```bash
 gcloud projects create $PROJECT_ID
 ```
-		You can confirm:
-			gcloud projects list | grep $PROJECT_ID
+
+You can confirm:
+```bash
+gcloud projects list | grep $PROJECT_ID
+```
 	
-	Enable Billing (CLI)
-		First get your billing account ID:
-			gcloud billing accounts list
-		Export it:
-			BILLING_ACCOUNT_ID="XXXXXX-XXXXXX-XXXXXX"
-		Attach billing:
-			gcloud billing projects link $PROJECT_ID \
- 			 --billing-account=$BILLING_ACCOUNT_ID
- 		Validate:
- 			gcloud billing projects describe $PROJECT_ID
- 		Expected:
- 			billingEnabled: true
+## Enable Billing (CLI)
+First get your billing account ID:
+```bash
+gcloud billing accounts list
+```
+
+Export it:
+```bash
+BILLING_ACCOUNT_ID="XXXXXX-XXXXXX-XXXXXX"
+```
+
+Attach billing:
+```bash
+gcloud billing projects link $PROJECT_ID \
+--billing-account=$BILLING_ACCOUNT_ID
+```
+
+Validate:
+```bash
+gcloud billing projects describe $PROJECT_ID
+```
+
+Expected:
+```text
+billingEnabled: true
+```
  	
- 	Set the Project as Your Active Context
- 		gcloud config set project $PROJECT_ID
- 		Confirm:
- 			gcloud config get-value project
+## Set the Project as Your Active Context
+```bash
+gcloud config set project $PROJECT_ID
+```
+
+Confirm:
+```bash
+gcloud config get-value project
+```
  			
- 	Enable Required APIs 
- 		Enable APIs:
- 			gcloud services enable \
-  				run.googleapis.com \
- 			 	artifactregistry.googleapis.com \
-  				cloudbuild.googleapis.com \
-  				secretmanager.googleapis.com
+## Enable Required APIs 
+Enable APIs:
+```bash
+gcloud services enable \
+run.googleapis.com \
+artifactregistry.googleapis.com \
+cloudbuild.googleapis.com \
+secretmanager.googleapis.com
+```
 
