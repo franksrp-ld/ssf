@@ -380,7 +380,7 @@ That URL will become your **SSF_ISSUER**.
 SERVICE_URL="<Service URL from above>"
 
 gcloud run services update ssf-transmitter \
-  --set-env-vars SSF_ISSUER="$SERVICE_URL"
+  --set-env-vars OKTA_ORG="${OKTA_ORG}",SSF_ISSUER="${SERVICE_URL}"
 ```
 
 --- 
