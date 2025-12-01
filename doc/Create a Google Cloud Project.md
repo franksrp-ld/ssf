@@ -1,13 +1,15 @@
 # How to Create a Google Cloud Project with Billing Enabled
 
 ## Create the New Project
-		Pick a unique project ID:
-    ```text
-    PROJECT_ID="lookout-ssf-XXX"
-    ```
-    
-		Create the project:
-			gcloud projects create $PROJECT_ID
+
+Pick a unique project ID:
+```text
+PROJECT_ID="lookout-ssf-XXX"
+```
+Create the project:
+```bash
+gcloud projects create $PROJECT_ID
+```
 		You can confirm:
 			gcloud projects list | grep $PROJECT_ID
 	
