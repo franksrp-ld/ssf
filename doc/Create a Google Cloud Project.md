@@ -19,7 +19,7 @@ gcloud projects create $PROJECT_ID
 
 You can confirm:
 ```bash
-gcloud projects list | grep $PROJECT_ID
+gcloud projects list
 ```
 	
 ## Enable Billing (CLI)
