@@ -10,15 +10,18 @@ const POLL_INTERVAL_SECONDS =
   parseInt(process.env.LOOKOUT_POLL_INTERVAL_SECONDS || "60", 10);
 const LOOKOUT_APP_KEY = process.env.LOOKOUT_APP_KEY;
 
-// Optional: if you ever want to pin to one tenant explicitly
+// Optional: pin to one Lookout tenant explicitly
 const LOOKOUT_ENTERPRISE_GUID = process.env.LOOKOUT_ENTERPRISE_GUID || null;
 
-// Where we POST into our own service to turn Lookout risk into SSF events
 // In Cloud Run, localhost:PORT will hit the same container.
 const PORT = process.env.PORT || 8080;
 const SSF_INTAKE_URL =
   process.env.SSF_INTAKE_URL ||
   `http://localhost:${PORT}/intake/lookout`;
+
+// 🔁 In-memory risk cache so we can send proper previous/current transitions
+// Map<email, "low" | "medium" | "high">
+const lastRiskByUser = new Map();
 
 // Helper: how far back to look
 function isoSince(minutes) {
@@ -51,7 +54,7 @@ async function pollLookoutOnce() {
   }
 
   const params = new URLSearchParams();
-  params.set("limit", "200"); // avoid the default 20-device cap
+  params.set("limit", "200");
   params.set("updated_since", sinceIso);
   if (LOOKOUT_ENTERPRISE_GUID) {
     params.set("enterprise_guid", LOOKOUT_ENTERPRISE_GUID);
@@ -96,7 +99,7 @@ async function pollLookoutOnce() {
 
   for (const d of devices) {
     const email = d.email;
-    const securityStatus = d.security_status; // NOTE: snake_case from the API
+    const securityStatus = d.security_status;
     const guid = d.guid;
 
     if (!email || !securityStatus) {
@@ -112,26 +115,38 @@ async function pollLookoutOnce() {
     }
 
     const riskLevel = mapSecurityStatusToRiskLevel(securityStatus);
-
-    // For now: only emit SSF events for medium/high risk
-    if (!riskLevel || riskLevel === "low") {
-      console.log("[LookoutPoll] Skipping low/secure device", {
+    if (!riskLevel) {
+      console.log("[LookoutPoll] Could not map security_status to risk", {
         guid,
         email,
         security_status: securityStatus,
-        mapped_risk: riskLevel,
       });
       continue;
     }
+
+    // 🔑 NEW: track previous vs current to drive Okta transitions, incl. back to LOW
+    const previousLevel = lastRiskByUser.get(email) || "low";
+
+    // If nothing changed, don't spam Okta
+    if (previousLevel === riskLevel) {
+      console.log("[LookoutPoll] Risk unchanged; not sending SET", {
+        guid,
+        email,
+        security_status: securityStatus,
+        current_level: riskLevel,
+      });
+      continue;
+    }
+
+    lastRiskByUser.set(email, riskLevel);
 
     const eventTimestamp = d.updated_time || new Date().toISOString();
 
     const payload = {
       user: { email },
       risk: {
-        current_level: riskLevel,
-        // We’re not tracking state transitions yet; treat “before” as low.
-        previous_level: "low",
+        current_level: riskLevel,      // high / medium / low
+        previous_level: previousLevel, // what we last told Okta (or low)
         reason: `Lookout security_status=${securityStatus} for ${email}`,
       },
       event_timestamp: eventTimestamp,
@@ -153,14 +168,16 @@ async function pollLookoutOnce() {
             text: text.substring(0, 500),
             email,
             security_status: securityStatus,
-            mapped_risk: riskLevel,
+            previous_level: previousLevel,
+            current_level: riskLevel,
           }
         );
       } else {
         console.log("[LookoutPoll] Sent risk event to /intake/lookout", {
           email,
           security_status: securityStatus,
-          mapped_risk: riskLevel,
+          previous_level: previousLevel,
+          current_level: riskLevel,
         });
       }
     } catch (err) {
@@ -170,7 +187,8 @@ async function pollLookoutOnce() {
           error: String(err),
           email,
           security_status: securityStatus,
-          mapped_risk: riskLevel,
+          previous_level: previousLevel,
+          current_level: riskLevel,
         }
       );
     }
