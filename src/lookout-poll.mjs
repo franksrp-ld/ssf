@@ -2,32 +2,33 @@
 import fetch from "node-fetch";
 import { getLookoutToken } from "./lookout-auth.mjs";
 
-const BASE_URL =
-  process.env.LOOKOUT_BASE_URL || "https://api.lookout.com";
-const SINCE_MINUTES =
-  parseInt(process.env.LOOKOUT_SINCE_MINUTES || "5", 10);
-const POLL_INTERVAL_SECONDS =
-  parseInt(process.env.LOOKOUT_POLL_INTERVAL_SECONDS || "60", 10);
-const LOOKOUT_APP_KEY = process.env.LOOKOUT_APP_KEY;
-
-// Optional: pin to one tenant explicitly
-const LOOKOUT_ENTERPRISE_GUID = process.env.LOOKOUT_ENTERPRISE_GUID || null;
-
-
-// In Cloud Run, localhost:PORT will hit the same container.
-const PORT = process.env.PORT || 8080;
-const SSF_INTAKE_URL =
-  process.env.SSF_INTAKE_URL ||
-  `http://localhost:${PORT}/intake/lookout`;
-
 // ------------------------
 // Polling heartbeat state
 // ------------------------
-let lastPollAt = null;          // Date ISO string of last attempt
-let lastPollResult = null;      // "ok" | "error" | "disabled"
-let lastPollError = null;       // short error message (string) or null
-let totalPolls = 0;             // how many times we attempted to poll
-let totalErrors = 0;            // how many poll attempts failed
+let lastPollAt = null;          // ISO timestamp of last poll attempt
+let lastPollResult = null;      // "ok" | "error" | "disabled" | null
+let lastPollError = null;       // short error message or null
+let totalPolls = 0;             // total attempts
+let totalErrors = 0;            // total failed attempts
+
+// Track last risk we told Okta per user so we can send LOW transitions
+const lastRiskByUser = new Map(); // email -> "low"|"medium"|"high"
+
+// Exposed diagnostics for HTTP layer
+export function getPollingStatus() {
+  return {
+    enabled: Boolean(LOOKOUT_APP_KEY),
+    lastPollAt,                // ISO string or null
+    lastPollResult,            // "ok" | "error" | "disabled" | null
+    lastPollError,             // string or null
+    totalPolls,
+    totalErrors,
+    sinceMinutes: SINCE_MINUTES,
+    pollIntervalSeconds: POLL_INTERVAL_SECONDS,
+    lookoutBaseUrl: BASE_URL,
+    enterpriseGuid: LOOKOUT_ENTERPRISE_GUID || undefined,
+  };
+}
 
 function recordPollSuccess() {
   lastPollAt = new Date().toISOString();
@@ -44,26 +45,25 @@ function recordPollError(err) {
   totalErrors += 1;
 }
 
-// Exposed diagnostics for HTTP layer
-export function getPollingStatus() {
-  return {
-    enabled: Boolean(LOOKOUT_APP_KEY),
-    lastPollAt,                // ISO timestamp or null
-    lastPollResult,            // "ok" | "error" | "disabled" | null
-    lastPollError,             // string or null
-    totalPolls,
-    totalErrors,
-    sinceMinutes: SINCE_MINUTES,
-    pollIntervalSeconds: POLL_INTERVAL_SECONDS,
-    lookoutBaseUrl: BASE_URL,
-    enterpriseGuid: LOOKOUT_ENTERPRISE_GUID || undefined,
-  };
-}
+// ------------------------
+// Config
+// ------------------------
+const BASE_URL =
+  process.env.LOOKOUT_BASE_URL || "https://api.lookout.com";
+const SINCE_MINUTES =
+  parseInt(process.env.LOOKOUT_SINCE_MINUTES || "5", 10);
+const POLL_INTERVAL_SECONDS =
+  parseInt(process.env.LOOKOUT_POLL_INTERVAL_SECONDS || "60", 10);
+const LOOKOUT_APP_KEY = process.env.LOOKOUT_APP_KEY;
 
+// Optional: pin to one tenant explicitly
+const LOOKOUT_ENTERPRISE_GUID = process.env.LOOKOUT_ENTERPRISE_GUID || null;
 
-
-
-
+// In Cloud Run, localhost:PORT will hit the same container.
+const PORT = process.env.PORT || 8080;
+const SSF_INTAKE_URL =
+  process.env.SSF_INTAKE_URL ||
+  `http://localhost:${PORT}/intake/lookout`;
 
 // Helper: how far back to look
 function isoSince(minutes) {
@@ -166,18 +166,17 @@ async function pollLookoutOnce() {
 
     const riskLevel = mapSecurityStatusToRiskLevel(securityStatus);
 
-    // For now: only emit SSF events for medium/high risk
-    if (!riskLevel || riskLevel === "low") {
-      console.log("[LookoutPoll] Skipping low/secure device", {
+    if (!riskLevel) {
+      console.log("[LookoutPoll] Could not map security_status to risk", {
         guid,
         email,
         security_status: securityStatus,
-        mapped_risk: riskLevel,
       });
       continue;
     }
 
-    // 🔑 NEW: track previous vs current to drive Okta transitions, incl. back to LOW
+    // 🔑 NEW: track previous vs current to drive Okta transitions,
+    // including transitions back to LOW.
     const previousLevel = lastRiskByUser.get(email) || "low";
 
     // If nothing changed, don't spam Okta
@@ -191,6 +190,7 @@ async function pollLookoutOnce() {
       continue;
     }
 
+    // Update in-memory state
     lastRiskByUser.set(email, riskLevel);
 
     const eventTimestamp = d.updated_time || new Date().toISOString();
