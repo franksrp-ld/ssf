@@ -5,10 +5,7 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { handleLookoutIntake } from "./lookout-intake.mjs";
-import {
-  startLookoutPolling,
-  getPollingStatus,
-} from "./lookout-poll.mjs";
+import { startLookoutPolling, getPollingStatus } from "./lookout-poll.mjs";
 
 // ESM-friendly __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -57,28 +54,25 @@ const server = http.createServer(async (req, res) => {
       return res.end("ok");
     }
 
-    // Basic health endpoint (internal-facing; note: /healthz path can be
-    // intercepted by Google infra externally, but this still works inside
-    // the container and for Cloud Run health checks).
+    // Health endpoint (internal use / for probes if you want)
     if (path === "/healthz" && (method === "GET" || method === "HEAD")) {
       res.writeHead(200, { "Content-Type": "text/plain" });
       return res.end("ok");
     }
 
-    // --- New: diagnostics /status endpoint
-    // This is what you can curl from the outside:
-    //   curl -s https://<service-url>/status | jq
-    if (path === "/status" && method === "GET") {
-      const polling = getPollingStatus();
-      const payload = {
-        ok: true,
-        issuer: ISSUER,
-        uptimeSeconds: process.uptime(),
-        polling,
-      };
-
+    // NEW: status / diagnostics endpoint (JSON)
+    if (path === "/status" && (method === "GET" || method === "HEAD")) {
+      const body = JSON.stringify(
+        {
+          service: "ssf-transmitter",
+          issuer: ISSUER,
+          polling: getPollingStatus(),
+        },
+        null,
+        2
+      );
       res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(payload));
+      return res.end(body);
     }
 
     // SSF discovery
