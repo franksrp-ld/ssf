@@ -1,4 +1,4 @@
-// lookout-poll.mjs
+// src/lookout-poll.mjs
 import fetch from "node-fetch";
 import { getLookoutToken } from "./lookout-auth.mjs";
 
@@ -10,8 +10,9 @@ const POLL_INTERVAL_SECONDS =
   parseInt(process.env.LOOKOUT_POLL_INTERVAL_SECONDS || "60", 10);
 const LOOKOUT_APP_KEY = process.env.LOOKOUT_APP_KEY;
 
-// Optional: pin to one Lookout tenant explicitly
+// Optional: pin to one tenant explicitly
 const LOOKOUT_ENTERPRISE_GUID = process.env.LOOKOUT_ENTERPRISE_GUID || null;
+
 
 // In Cloud Run, localhost:PORT will hit the same container.
 const PORT = process.env.PORT || 8080;
@@ -19,9 +20,50 @@ const SSF_INTAKE_URL =
   process.env.SSF_INTAKE_URL ||
   `http://localhost:${PORT}/intake/lookout`;
 
-// 🔁 In-memory risk cache so we can send proper previous/current transitions
-// Map<email, "low" | "medium" | "high">
-const lastRiskByUser = new Map();
+// ------------------------
+// Polling heartbeat state
+// ------------------------
+let lastPollAt = null;          // Date ISO string of last attempt
+let lastPollResult = null;      // "ok" | "error" | "disabled"
+let lastPollError = null;       // short error message (string) or null
+let totalPolls = 0;             // how many times we attempted to poll
+let totalErrors = 0;            // how many poll attempts failed
+
+function recordPollSuccess() {
+  lastPollAt = new Date().toISOString();
+  lastPollResult = "ok";
+  lastPollError = null;
+  totalPolls += 1;
+}
+
+function recordPollError(err) {
+  lastPollAt = new Date().toISOString();
+  lastPollResult = "error";
+  lastPollError = String(err).substring(0, 500);
+  totalPolls += 1;
+  totalErrors += 1;
+}
+
+// Exposed diagnostics for HTTP layer
+export function getPollingStatus() {
+  return {
+    enabled: Boolean(LOOKOUT_APP_KEY),
+    lastPollAt,                // ISO timestamp or null
+    lastPollResult,            // "ok" | "error" | "disabled" | null
+    lastPollError,             // string or null
+    totalPolls,
+    totalErrors,
+    sinceMinutes: SINCE_MINUTES,
+    pollIntervalSeconds: POLL_INTERVAL_SECONDS,
+    lookoutBaseUrl: BASE_URL,
+    enterpriseGuid: LOOKOUT_ENTERPRISE_GUID || undefined,
+  };
+}
+
+
+
+
+
 
 // Helper: how far back to look
 function isoSince(minutes) {
@@ -50,11 +92,12 @@ async function pollLookoutOnce() {
     token = await getLookoutToken();
   } catch (err) {
     console.error("[LookoutPoll] Failed to get Lookout token:", err);
+    recordPollError(err);
     return;
   }
 
   const params = new URLSearchParams();
-  params.set("limit", "200");
+  params.set("limit", "200"); // avoid the default 20-device cap
   params.set("updated_since", sinceIso);
   if (LOOKOUT_ENTERPRISE_GUID) {
     params.set("enterprise_guid", LOOKOUT_ENTERPRISE_GUID);
@@ -83,12 +126,16 @@ async function pollLookoutOnce() {
         resp.status,
         text.substring(0, 500)
       );
+      recordPollError(
+        `Lookout API ${resp.status}: ${text.substring(0, 200)}`
+      );
       return;
     }
 
     data = await resp.json();
   } catch (err) {
     console.error("[LookoutPoll] Error calling Lookout API:", err);
+    recordPollError(err);
     return;
   }
 
@@ -97,9 +144,12 @@ async function pollLookoutOnce() {
     `[LookoutPoll] Received ${devices.length} devices from Lookout (count=${data.count ?? "?"})`
   );
 
+  // If we got here without throwing, treat the poll as successful
+  recordPollSuccess();
+
   for (const d of devices) {
     const email = d.email;
-    const securityStatus = d.security_status;
+    const securityStatus = d.security_status; // NOTE: snake_case from the API
     const guid = d.guid;
 
     if (!email || !securityStatus) {
@@ -115,11 +165,14 @@ async function pollLookoutOnce() {
     }
 
     const riskLevel = mapSecurityStatusToRiskLevel(securityStatus);
-    if (!riskLevel) {
-      console.log("[LookoutPoll] Could not map security_status to risk", {
+
+    // For now: only emit SSF events for medium/high risk
+    if (!riskLevel || riskLevel === "low") {
+      console.log("[LookoutPoll] Skipping low/secure device", {
         guid,
         email,
         security_status: securityStatus,
+        mapped_risk: riskLevel,
       });
       continue;
     }
@@ -200,6 +253,8 @@ export function startLookoutPolling() {
     console.warn(
       "[LookoutPoll] LOOKOUT_APP_KEY not set; polling is disabled."
     );
+    lastPollResult = "disabled";
+    lastPollError = "LOOKOUT_APP_KEY env var not set";
     return;
   }
 
